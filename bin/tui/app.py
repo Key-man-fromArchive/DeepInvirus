@@ -76,6 +76,32 @@ class DeepInVirusApp(App):
     def on_mount(self) -> None:
         """Push MainScreen as the initial (default) screen on startup."""
         self.push_screen("main")
+        self._check_interrupted_runs()
+
+    def _check_interrupted_runs(self) -> None:
+        """Detect runs left in 'running' status from a previous crash.
+
+        If interrupted runs are found, display a notification and offer
+        to resume the most recent one.
+        """
+        try:
+            import history_manager
+
+            interrupted = history_manager.get_interrupted_runs()
+            if not interrupted:
+                return
+
+            latest = interrupted[0]
+            run_id = latest.get("run_id", "unknown")
+            self.notify(
+                f"Interrupted run detected: {run_id}. "
+                "Use 'Run Analysis' with resume to continue, "
+                "or it will be marked as interrupted.",
+                title="Interrupted Run Found",
+                timeout=10,
+            )
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Navigation actions — invoked by BINDINGS and button handlers

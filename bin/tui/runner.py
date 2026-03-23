@@ -71,7 +71,7 @@ class NextflowRunner:
     # Command building
     # ------------------------------------------------------------------
 
-    def build_command(self, params: dict) -> list[str]:
+    def build_command(self, params: dict, resume: bool = False) -> list[str]:
         """Convert a pipeline parameter dict into a Nextflow CLI argument list.
 
         The generated command has the form::
@@ -85,6 +85,8 @@ class NextflowRunner:
         Args:
             params: Pipeline parameters as returned by
                 :meth:`RunScreen.get_params`.
+            resume: If True, append ``-resume`` to enable Nextflow
+                cache-based resume from the last successful step.
 
         Returns:
             list[str]: Command tokens suitable for
@@ -109,6 +111,10 @@ class NextflowRunner:
         threads = params.get("threads")
         if threads:
             cmd.extend(["-process.cpus", str(threads)])
+
+        # Resume from last cached step
+        if resume:
+            cmd.append("-resume")
 
         return cmd
 
@@ -161,7 +167,20 @@ class NextflowRunner:
     # Async lifecycle
     # ------------------------------------------------------------------
 
-    async def start(self, params: dict) -> None:
+    def _get_work_dir(self, params: dict) -> Path:
+        """Return the Nextflow work/ directory path for a given run.
+
+        The work directory is ``<project_root>/work`` by default.
+
+        Args:
+            params: Pipeline parameters dict (reserved for future use).
+
+        Returns:
+            Path to the Nextflow work directory.
+        """
+        return self.work_dir / "work"
+
+    async def start(self, params: dict, resume: bool = False) -> None:
         """Launch the Nextflow pipeline as an async subprocess.
 
         Builds the command via :meth:`build_command`, then spawns it
@@ -170,8 +189,9 @@ class NextflowRunner:
 
         Args:
             params: Pipeline parameters dict.
+            resume: If True, pass ``-resume`` to Nextflow.
         """
-        cmd = self.build_command(params)
+        cmd = self.build_command(params, resume=resume)
         self.start_time = time.time()
         self.is_running = True
         self.steps_completed = 0

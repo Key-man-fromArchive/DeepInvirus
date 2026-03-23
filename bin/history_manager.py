@@ -71,6 +71,7 @@ def record_run(
     output_dir: str,
     summary: dict,
     *,
+    work_dir: str | None = None,
     history_file: Path | None = None,
 ) -> None:
     """Append a run record to the history file.
@@ -82,13 +83,15 @@ def record_run(
     params:
         Pipeline parameters used for this run.
     status:
-        Run outcome: "done", "failed", or "running".
+        Run outcome: "running", "completed", "failed", or "interrupted".
     duration:
         Elapsed wall-clock time in seconds.
     output_dir:
         Absolute path to the output directory.
     summary:
         Result summary dict (samples, viruses, etc.).
+    work_dir:
+        Nextflow work/ directory path for resume support.
     history_file:
         Override path for testing with tmpdir.
     """
@@ -101,6 +104,7 @@ def record_run(
         "duration": duration,
         "output_dir": output_dir,
         "summary": summary,
+        "work_dir": work_dir or "",
         "recorded_at": datetime.now(timezone.utc).isoformat(),
     }
     records.append(entry)
@@ -155,3 +159,100 @@ def delete_run(
         return False
     _write_history(path, new_records)
     return True
+
+
+def update_run_status(
+    run_id: str,
+    *,
+    status: str,
+    duration: float | None = None,
+    history_file: Path | None = None,
+) -> bool:
+    """Update the status (and optionally duration) of an existing run record.
+
+    Parameters
+    ----------
+    run_id:
+        The run to update.
+    status:
+        New status value ("completed", "failed", "interrupted").
+    duration:
+        If provided, also update the duration field.
+    history_file:
+        Override path for testing.
+
+    Returns
+    -------
+    bool: True if a matching record was found and updated.
+    """
+    path = _resolve_file(history_file)
+    records = _read_history(path)
+    for r in records:
+        if r["run_id"] == run_id:
+            r["status"] = status
+            if duration is not None:
+                r["duration"] = duration
+            _write_history(path, records)
+            return True
+    return False
+
+
+def get_interrupted_runs(
+    *,
+    history_file: Path | None = None,
+) -> list[dict]:
+    """Return records whose status is 'running' (likely from abnormal termination).
+
+    These are runs that were never marked as completed, failed, or interrupted,
+    indicating the process was killed before it could update the status.
+
+    Returns
+    -------
+    list[dict]: Matching history records, most recent first.
+    """
+    path = _resolve_file(history_file)
+    records = _read_history(path)
+    running = [r for r in records if r.get("status") == "running"]
+    running.sort(key=lambda r: r.get("recorded_at", ""), reverse=True)
+    return running
+
+
+def mark_interrupted(
+    run_id: str,
+    *,
+    history_file: Path | None = None,
+) -> bool:
+    """Change a run's status to 'interrupted'.
+
+    Parameters
+    ----------
+    run_id:
+        The run to mark.
+    history_file:
+        Override path for testing.
+
+    Returns
+    -------
+    bool: True if a matching record was found and updated.
+    """
+    return update_run_status(run_id, status="interrupted", history_file=history_file)
+
+
+def get_resume_info(
+    run_id: str,
+    *,
+    history_file: Path | None = None,
+) -> dict | None:
+    """Return the information needed to resume a run.
+
+    Returns a dict with keys: params, output_dir, work_dir.
+    Returns None if run_id is not found.
+    """
+    record = get_run(run_id, history_file=history_file)
+    if record is None:
+        return None
+    return {
+        "params": record.get("params", {}),
+        "output_dir": record.get("output_dir", ""),
+        "work_dir": record.get("work_dir", ""),
+    }

@@ -352,24 +352,42 @@ class RunScreen(Screen):
     # T8.2: Pipeline execution with real-time progress
     # ------------------------------------------------------------------
 
-    async def _run_pipeline(self, params: dict) -> None:
+    async def _run_pipeline(self, params: dict, resume: bool = False) -> None:
         """Launch NextflowRunner and stream progress to widgets.
 
         This coroutine:
         1. Creates a NextflowRunner pointed at the project root.
-        2. Starts the Nextflow subprocess.
+        2. Starts the Nextflow subprocess (with optional -resume).
         3. Reads output lines, forwarding to LogViewer and ProgressWidget.
         4. On completion, records the run in history and pushes ResultScreen.
 
         Args:
             params: Validated pipeline parameter dict.
+            resume: If True, pass -resume to Nextflow for cache-based resume.
         """
         # Resolve project root (one level up from bin/)
         project_root = Path(__file__).resolve().parents[2]
         runner = NextflowRunner(work_dir=project_root)
 
+        # Record run as 'running' before starting
+        run_id = str(uuid.uuid4())[:8]
         try:
-            await runner.start(params)
+            import history_manager
+
+            history_manager.record_run(
+                run_id=run_id,
+                params=params,
+                status="running",
+                duration=0,
+                output_dir=params.get("outdir", "./results"),
+                summary={},
+                work_dir=str(runner._get_work_dir(params)),
+            )
+        except Exception:
+            pass
+
+        try:
+            await runner.start(params, resume=resume)
         except Exception as exc:
             self.app.notify(
                 f"Failed to start pipeline: {exc}",
@@ -408,24 +426,17 @@ class RunScreen(Screen):
         )
 
         # Pipeline finished -- determine status
-        status = "done" if runner.process and runner.process.returncode == 0 else "failed"
+        status = "completed" if runner.process and runner.process.returncode == 0 else "failed"
         duration = runner.get_elapsed()
 
-        # Record in history
+        # Update the existing history record with final status
         try:
             import history_manager
 
-            run_id = str(uuid.uuid4())[:8]
-            history_manager.record_run(
-                run_id=run_id,
-                params=params,
+            history_manager.update_run_status(
+                run_id,
                 status=status,
                 duration=duration,
-                output_dir=params.get("outdir", "./results"),
-                summary={
-                    "steps_completed": runner.steps_completed,
-                    "steps_total": runner.steps_total,
-                },
             )
         except Exception:
             pass
