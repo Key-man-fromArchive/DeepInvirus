@@ -192,7 +192,7 @@ workflow {
 
     // --- Step 4: CLASSIFICATION (MMSEQS -> TAXONKIT -> COVERM -> MERGE_RESULTS -> DIVERSITY) ---
     CLASSIFICATION(
-        DETECTION.out.detected_seqs,
+        ASSEMBLY.out.contigs,
         PREPROCESSING.out.filtered_reads,
         ASSEMBLY.out.contigs,
         DETECTION.out.detected_seqs,

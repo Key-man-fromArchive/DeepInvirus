@@ -14,7 +14,7 @@ process MMSEQS_TAXONOMY {
 
     script:
     def prefix = meta.id
-    def db_path = params.db_dir ? "${params.db_dir}/viral_nucleotide/refseq_viral.mmseqs" : "viral_refseq"
+    def db_path = params.db_dir ? "${params.db_dir}/viral_nucleotide/refseq_viral_db" : "viral_refseq"
     """
     mmseqs easy-taxonomy \\
         ${viral_contigs} \\
