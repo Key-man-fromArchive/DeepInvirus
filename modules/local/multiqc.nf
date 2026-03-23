@@ -4,6 +4,7 @@
 process MULTIQC {
     tag "multiqc"
     label 'process_low'
+    label 'process_multiqc'
 
     input:
     path(multiqc_files)
