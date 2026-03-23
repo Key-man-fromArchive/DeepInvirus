@@ -113,9 +113,12 @@ if (!(params.search in ['fast', 'sensitive'])) {
     exit 1
 }
 
-if (!(params.host in ['human', 'mouse', 'insect', 'none'])) {
-    log.error "ERROR: --host must be one of: human, mouse, insect, none. Got: '${params.host}'"
-    exit 1
+// host validation: allow built-in names or 'none' or any custom name (directory must exist)
+def builtin_hosts = ['human', 'mouse', 'insect', 'none']
+if (!(params.host in builtin_hosts)) {
+    // Custom host: check if directory exists
+    def custom_host_dir = "${params.db_dir ?: 'databases'}/host_genomes/${params.host}"
+    log.info "Using custom host genome: ${params.host} (${custom_host_dir})"
 }
 
 // -----------------------------------------------------------------------
@@ -152,15 +155,12 @@ workflow {
     // --- Host genome channel setup ---
     // @TASK T1.3 - Set host genome path based on params.host
     // @SPEC docs/planning/04-database-design.md#host_genomes
-    def host_genome_map = [
-        human : "${params.db_dir ?: 'databases'}/host_genomes/human/genome.fa.gz",
-        mouse : "${params.db_dir ?: 'databases'}/host_genomes/mouse/genome.fa.gz",
-        insect: "${params.db_dir ?: 'databases'}/host_genomes/insect/genome.fa.gz",
-    ]
+    // Host genome: support built-in + custom names
+    def host_genome_path = "${params.db_dir ?: 'databases'}/host_genomes/${params.host}/genome.fa.gz"
 
     if ( params.host != 'none' ) {
         ch_host_genome = Channel.fromPath(
-            host_genome_map[params.host],
+            host_genome_path,
             checkIfExists: true
         )
     } else {
@@ -180,7 +180,15 @@ workflow {
     ASSEMBLY( PREPROCESSING.out.filtered_reads )
 
     // --- Step 3: DETECTION (GENOMAD + DIAMOND -> MERGE) ---
-    DETECTION( ASSEMBLY.out.contigs )
+    // DB channels for detection tools
+    ch_genomad_db = params.db_dir
+        ? Channel.fromPath("${params.db_dir}/genomad_db", checkIfExists: false)
+        : Channel.value(file("databases/genomad_db"))
+    ch_diamond_db = params.db_dir
+        ? Channel.fromPath("${params.db_dir}/viral_protein/uniref90_viral.dmnd", checkIfExists: false)
+        : Channel.value(file("databases/viral_protein/uniref90_viral.dmnd"))
+
+    DETECTION( ASSEMBLY.out.contigs, ch_genomad_db, ch_diamond_db )
 
     // --- Step 4: CLASSIFICATION (MMSEQS -> TAXONKIT -> COVERM -> MERGE_RESULTS -> DIVERSITY) ---
     CLASSIFICATION(

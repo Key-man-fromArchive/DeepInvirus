@@ -8,17 +8,19 @@ include { MERGE_DETECTION } from '../modules/local/merge_detection'
 workflow DETECTION {
 
     take:
-    ch_contigs   // tuple val(meta), path(contigs)
+    ch_contigs       // tuple val(meta), path(contigs)
+    ch_genomad_db    // path: geNomad database directory
+    ch_diamond_db    // path: Diamond database file
 
     main:
     // Step 1: Parallel virus detection
     // geNomad (ML-based) - skippable via params.skip_ml
     if ( !params.skip_ml ) {
-        GENOMAD_DETECT( ch_contigs )
+        GENOMAD_DETECT( ch_contigs, ch_genomad_db )
     }
 
     // Diamond blastx (homology-based) - always runs
-    DIAMOND_BLASTX( ch_contigs )
+    DIAMOND_BLASTX( ch_contigs, ch_diamond_db )
 
     // Step 2: Merge detection results
     if ( !params.skip_ml ) {
