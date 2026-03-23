@@ -181,12 +181,12 @@ workflow {
 
     // --- Step 3: DETECTION (GENOMAD + DIAMOND -> MERGE) ---
     // DB channels for detection tools
-    ch_genomad_db = params.db_dir
-        ? Channel.fromPath("${params.db_dir}/genomad_db", checkIfExists: false)
-        : Channel.value(file("databases/genomad_db"))
-    ch_diamond_db = params.db_dir
-        ? Channel.fromPath("${params.db_dir}/viral_protein/uniref90_viral.dmnd", checkIfExists: false)
-        : Channel.value(file("databases/viral_protein/uniref90_viral.dmnd"))
+    ch_genomad_db = Channel.value(
+        file("${params.db_dir ?: 'databases'}/genomad_db", checkIfExists: true)
+    )
+    ch_diamond_db = Channel.value(
+        file("${params.db_dir ?: 'databases'}/viral_protein/viral_protein.dmnd", checkIfExists: true)
+    )
 
     DETECTION( ASSEMBLY.out.contigs, ch_genomad_db, ch_diamond_db )
 
