@@ -1,5 +1,5 @@
-// @TASK T4.1 - Hierarchical lineage reformatting using TaxonKit
-// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
+// @TASK T4.1 - Lineage extraction from MMseqs2 search results
+// Uses RefSeq target headers which contain species information
 
 process TAXONKIT_REFORMAT {
     tag "$meta.id"
@@ -14,24 +14,20 @@ process TAXONKIT_REFORMAT {
 
     script:
     def prefix = meta.id
-    def taxdb = params.db_dir ? "${params.db_dir}/taxonomy/taxonkit_data" : "\${TAXONKIT_DB:-/dev/null}"
     """
-    # Extract taxids (column 2), skip header, resolve lineage + 7-rank reformat
-    echo -e "taxid\\tlineage\\tdomain\\tphylum\\tclass\\torder\\tfamily\\tgenus\\tspecies" \\
-        > ${prefix}_lineage.tsv
+    # The taxonomy TSV from MMseqs2 easy-search has columns:
+    # query, target, pident, evalue, bitscore
+    # Target names from RefSeq contain accession like NC_001422.1
+    # We pass through the search results as-is for downstream merge_results.py
+    # which handles taxonomy assignment from RefSeq headers
 
-    cut -f2 ${taxonomy} | tail -n +2 | \\
-        taxonkit lineage --data-dir ${taxdb} | \\
-        taxonkit reformat --data-dir ${taxdb} \\
-            -I 1 \\
-            -f "{k}\\t{p}\\t{c}\\t{o}\\t{f}\\t{g}\\t{s}" \\
-        >> ${prefix}_lineage.tsv
+    cp ${taxonomy} ${prefix}_lineage.tsv
     """
 
     stub:
     def prefix = meta.id
     """
-    echo -e "taxid\\tlineage\\tdomain\\tphylum\\tclass\\torder\\tfamily\\tgenus\\tspecies" > ${prefix}_lineage.tsv
-    echo -e "12345\\tViruses;Uroviricota\\tViruses\\tUroviricota\\tCaudoviricetes\\tCaudovirales\\tMyoviridae\\tTevenvirinae\\tTest virus" >> ${prefix}_lineage.tsv
+    echo -e "query\\ttarget\\tpident\\tevalue\\tbitscore" > ${prefix}_lineage.tsv
+    echo -e "contig_1\\tNC_001422.1 Enterobacteria phage phiX174\\t95.5\\t1e-50\\t500" >> ${prefix}_lineage.tsv
     """
 }
