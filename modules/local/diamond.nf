@@ -15,11 +15,10 @@ process DIAMOND_BLASTX {
 
     script:
     def prefix = meta.id
-    def db_path = params.db_dir ? "${params.db_dir}/uniref90_viral" : "${db}"
     """
     diamond blastx \\
         --query ${contigs} \\
-        --db ${db_path} \\
+        --db ${db} \\
         --out ${prefix}.diamond.tsv \\
         --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids \\
         --threads ${task.cpus} \\
