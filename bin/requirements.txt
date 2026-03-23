@@ -1,0 +1,36 @@
+# @TASK T0.1 - Python 의존성 목록
+# @SPEC docs/planning/02-trd.md#2.3-보고서/시각화
+# @SPEC docs/planning/07-coding-convention.md#5.3-의존성-관리
+
+# Data manipulation
+pandas>=2.0
+numpy>=1.24
+
+# Statistics & diversity
+scipy>=1.11
+scikit-bio>=0.6
+
+# Static visualization
+matplotlib>=3.8
+seaborn>=0.13
+
+# Dynamic dashboard
+plotly>=5.18
+
+# Word report generation
+python-docx>=1.1
+
+# HTML templating (dashboard)
+jinja2>=3.1
+
+# TUI interface
+textual>=0.47
+pyyaml>=6.0
+
+# Testing & quality tools
+pytest>=7.4
+pytest-cov>=4.1
+pytest-asyncio>=0.21
+ruff>=0.1
+black>=23.9
+mypy>=1.5

@@ -1,0 +1,6 @@
+seq_id	sample	seq_type	length	detection_method	detection_score	taxid	domain	phylum	class	order	family	genus	species	ictv_classification	baltimore_group	count	rpm	coverage
+viral_contig_001	sample_A	contig	2847	both	0.95	10239	Virus	Negarnaviricota	Polyploviricetes	Mononegavirales	Filoviridae	Ebolavirus	Zaire ebolavirus	Filoviridae; Ebolavirus	Group V (-ssRNA)	245	1230.5	18.7
+read_contig_002	sample_A	read	150	diamond	0.87	11320	Virus	Pisuviricota	Herviviricetes	Picornavirales	Picornaviridae	Enterovirus	Enterovirus A	Picornaviridae; Enterovirus	Group IV (+ssRNA)	128	644.2	0.0
+viral_contig_003	sample_B	contig	1524	genomad	0.92	10566	Virus	Nucleocytoviricota	Megaviricetes	Imitervirales	Asfarviridae	Asfarvirus	African swine fever virus	Asfarviridae; Asfarvirus	Group I (dsDNA)	89	450.3	12.2
+read_contig_004	sample_B	read	150	diamond	0.85	1980410	Virus	Artverviricota	Revtraviricetes	Ortervirales	Retroviridae	Lentivirus	Human immunodeficiency virus 1	Retroviridae; Lentivirus	Group VI (ssRNA-RT)	156	785.8	0.0
+viral_contig_005	sample_C	contig	3200	both	0.93	11676	Virus	Nucleocytoviricota	Megaviricetes	Megavirales	Poxviridae	Orthopoxvirus	Vaccinia virus	Poxviridae; Orthopoxvirus	Group I (dsDNA)	312	1567.3	25.4

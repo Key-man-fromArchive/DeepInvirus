@@ -1,0 +1,4 @@
+sample	observed_species	shannon	simpson	chao1	pielou_evenness
+sample_A	2	0.693	0.667	2.0	0.5
+sample_B	2	0.689	0.667	2.0	0.497
+sample_C	1	0.0	0.0	1.0	0.0

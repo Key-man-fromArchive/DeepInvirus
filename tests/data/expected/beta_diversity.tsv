@@ -1,0 +1,4 @@
+	sample_A	sample_B	sample_C
+sample_A	0.0	0.45	0.89
+sample_B	0.45	0.0	0.72
+sample_C	0.89	0.72	0.0

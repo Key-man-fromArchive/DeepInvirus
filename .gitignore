@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Nextflow
+.nextflow/
+.nextflow.log*
+work/
+results/
+trace-*
+timeline-*
+report-*
+dag-*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+@eaDir/
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Databases (too large for git)
+databases/
+
+# User config
+.deepinvirus/
+
+# Temporary
+*.tmp
+*.bak

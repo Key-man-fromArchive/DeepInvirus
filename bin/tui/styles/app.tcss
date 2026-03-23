@@ -1,0 +1,597 @@
+/*
+ * @TASK T7.3 - TUI 전체 테마 및 스타일 정의
+ * @SPEC docs/planning/06-tasks-tui.md#phase-7-t73-테마-및-스타일-정의
+ * @SPEC docs/planning/05-design-system.md#3-컬러-팔레트
+ * @TEST tests/tui/test_styles.py
+ *
+ * Design System (05-design-system.md) 컬러 팔레트 기반 다크 테마.
+ * 배경 계열: Catppuccin Mocha (#1E1E2E) — 터미널 환경에 최적화.
+ * 강조 계열: Primary Deep Blue (#1F77B4).
+ */
+
+/* =========================================================================
+ * 1. 컬러 변수 (Design Token)
+ * ========================================================================= */
+
+$primary:        #1F77B4;
+$primary-light:  #AEC7E8;
+$primary-dark:   #155E8C;
+$secondary:      #FF7F0E;
+$success:        #22C55E;
+$warning:        #EAB308;
+$error:          #EF4444;
+$info:           #3B82F6;
+
+/* Surface / Background */
+$surface:        #F8F9FA;
+$background:     #1E1E2E;
+$background-alt: #181825;
+$panel-bg:       #313244;
+$overlay:        #45475A;
+
+/* Text */
+$text:           #CDD6F4;
+$text-muted:     #6C7086;
+$text-subtle:    #9399B2;
+$text-inverse:   #1E1E2E;
+
+/* Border */
+$border:         #45475A;
+$border-focus:   #1F77B4;
+
+/* =========================================================================
+ * 2. 전역 기본값
+ * ========================================================================= */
+
+Screen {
+    background: $background;
+    color: $text;
+}
+
+/* =========================================================================
+ * 3. 헤더 / 푸터
+ * ========================================================================= */
+
+HeaderWidget {
+    background: $primary-dark;
+    color: $text;
+    height: 3;
+    content-align: left middle;
+    padding: 0 2;
+    border-bottom: tall $border;
+}
+
+FooterWidget {
+    background: $background-alt;
+    color: $text-muted;
+    height: 1;
+    padding: 0 1;
+}
+
+/* 내장 Textual Header / Footer 오버라이드 */
+Header {
+    background: $primary-dark;
+    color: $text;
+    height: 3;
+}
+
+Header > .header--title {
+    color: $text;
+}
+
+Header > .header--tall {
+    background: $primary-dark;
+}
+
+Footer {
+    background: $background-alt;
+    color: $text-muted;
+}
+
+/* =========================================================================
+ * 4. StatusBar
+ * ========================================================================= */
+
+StatusBar {
+    background: $panel-bg;
+    color: $text-subtle;
+    height: 1;
+    padding: 0 2;
+    border-top: tall $border;
+}
+
+StatusBar .status--label {
+    color: $text-muted;
+}
+
+StatusBar .status--value {
+    color: $primary-light;
+}
+
+StatusBar .status--ok {
+    color: $success;
+}
+
+StatusBar .status--warn {
+    color: $warning;
+}
+
+StatusBar .status--error {
+    color: $error;
+}
+
+/* =========================================================================
+ * 5. 메인 화면 — 메뉴 그리드
+ * ========================================================================= */
+
+.menu-grid {
+    layout: grid;
+    grid-size: 2 3;
+    grid-gutter: 1 2;
+    padding: 1 2;
+    height: 1fr;
+}
+
+.menu-button {
+    background: $panel-bg;
+    color: $text;
+    border: tall $border;
+    height: 5;
+    content-align: center middle;
+    text-align: center;
+}
+
+.menu-button:hover {
+    background: $overlay;
+    border: tall $primary;
+    color: $primary-light;
+}
+
+.menu-button:focus {
+    background: $primary-dark;
+    border: tall $primary;
+    color: $text;
+}
+
+/* =========================================================================
+ * 6. 진행 표시 (ProgressWidget)
+ * ========================================================================= */
+
+ProgressWidget {
+    background: $panel-bg;
+    border: tall $border;
+    padding: 1 2;
+    height: auto;
+}
+
+ProgressWidget .progress--title {
+    color: $text;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+ProgressWidget .progress--step {
+    color: $text-subtle;
+}
+
+ProgressWidget .progress--elapsed {
+    color: $text-muted;
+}
+
+.progress-bar {
+    height: 1;
+    background: $overlay;
+    color: $primary;
+}
+
+ProgressBar {
+    height: 1;
+}
+
+ProgressBar > .bar--complete {
+    color: $primary;
+}
+
+ProgressBar > .bar--indeterminate {
+    color: $secondary;
+}
+
+/* =========================================================================
+ * 7. 로그 뷰어 (LogViewer)
+ * ========================================================================= */
+
+LogViewer {
+    background: $background-alt;
+    color: $text;
+    border: tall $border;
+    scrollbar-color: $overlay;
+    scrollbar-background: $background-alt;
+    padding: 0 1;
+}
+
+LogViewer .log--info {
+    color: $info;
+}
+
+LogViewer .log--success {
+    color: $success;
+}
+
+LogViewer .log--warning {
+    color: $warning;
+}
+
+LogViewer .log--error {
+    color: $error;
+}
+
+LogViewer .log--timestamp {
+    color: $text-muted;
+}
+
+/* =========================================================================
+ * 8. 데이터 테이블 (DataTable)
+ * ========================================================================= */
+
+DataTable {
+    background: $background-alt;
+    color: $text;
+    border: tall $border;
+    scrollbar-color: $overlay;
+    scrollbar-background: $background-alt;
+}
+
+DataTable > .datatable--header {
+    background: $panel-bg;
+    color: $primary-light;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: $primary-dark;
+    color: $text;
+}
+
+DataTable > .datatable--hover {
+    background: $overlay;
+    color: $text;
+}
+
+DataTable > .datatable--fixed {
+    background: $panel-bg;
+    color: $text-subtle;
+}
+
+DataTable > .datatable--even-row {
+    background: $background;
+}
+
+DataTable > .datatable--odd-row {
+    background: $background-alt;
+}
+
+/* 설치됨 / 미설치 상태 표시 */
+.status--installed {
+    color: $success;
+}
+
+.status--missing {
+    color: $text-muted;
+}
+
+/* =========================================================================
+ * 9. 입력 위젯
+ * ========================================================================= */
+
+Input {
+    background: $background-alt;
+    color: $text;
+    border: tall $border;
+    padding: 0 1;
+}
+
+Input:focus {
+    background: $background-alt;
+    border: tall $border-focus;
+    color: $text;
+}
+
+Input.-invalid {
+    border: tall $error;
+    color: $error;
+}
+
+Input.-valid {
+    border: tall $success;
+}
+
+Input > .input--placeholder {
+    color: $text-muted;
+}
+
+Select {
+    background: $background-alt;
+    color: $text;
+    border: tall $border;
+}
+
+Select:focus {
+    border: tall $border-focus;
+}
+
+Select > .select--overlay {
+    background: $panel-bg;
+    border: tall $border;
+}
+
+Select > SelectOverlay {
+    background: $panel-bg;
+    border: tall $border;
+}
+
+RadioSet {
+    background: transparent;
+    color: $text;
+    border: tall $border;
+    padding: 0 1;
+}
+
+RadioSet:focus {
+    border: tall $border-focus;
+}
+
+RadioButton {
+    background: transparent;
+    color: $text;
+}
+
+RadioButton:hover {
+    background: $overlay;
+    color: $text;
+}
+
+RadioButton.-selected {
+    color: $primary-light;
+}
+
+Checkbox {
+    background: transparent;
+    color: $text;
+}
+
+Checkbox:focus {
+    color: $primary-light;
+}
+
+Checkbox.-on {
+    color: $primary-light;
+}
+
+/* =========================================================================
+ * 10. 버튼 (Button)
+ * ========================================================================= */
+
+Button {
+    background: $panel-bg;
+    color: $text;
+    border: tall $border;
+    min-width: 12;
+    height: 3;
+    content-align: center middle;
+}
+
+Button:hover {
+    background: $overlay;
+    border: tall $primary;
+    color: $text;
+}
+
+Button:focus {
+    background: $overlay;
+    border: tall $primary;
+    color: $text;
+}
+
+Button.-active {
+    background: $primary-dark;
+    border: tall $primary;
+}
+
+/* Primary 버튼 */
+Button.primary {
+    background: $primary;
+    color: $text-inverse;
+    border: tall $primary-dark;
+    text-style: bold;
+}
+
+Button.primary:hover {
+    background: $primary-dark;
+    color: $text;
+    border: tall $primary;
+}
+
+Button.primary:focus {
+    background: $primary-dark;
+    color: $text;
+    border: tall $primary-light;
+}
+
+/* Secondary 버튼 */
+Button.secondary {
+    background: $overlay;
+    color: $text;
+    border: tall $border;
+}
+
+Button.secondary:hover {
+    background: $panel-bg;
+    border: tall $text-subtle;
+}
+
+/* Danger 버튼 */
+Button.danger {
+    background: $error;
+    color: $text;
+    border: tall $error;
+    text-style: bold;
+}
+
+Button.danger:hover {
+    background: #C53030;
+    border: tall $error;
+    color: $text;
+}
+
+Button.danger:focus {
+    background: #C53030;
+    border: tall $text;
+}
+
+/* =========================================================================
+ * 11. 카드 / 패널
+ * ========================================================================= */
+
+.panel {
+    background: $panel-bg;
+    border: tall $border;
+    padding: 1 2;
+    height: auto;
+}
+
+.card {
+    background: $background-alt;
+    border: tall $border;
+    padding: 1 2;
+    margin: 0 0 1 0;
+    height: auto;
+}
+
+.card--title {
+    color: $primary-light;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.card--body {
+    color: $text;
+}
+
+/* =========================================================================
+ * 12. 레이아웃 유틸리티
+ * ========================================================================= */
+
+/* 화면 중앙 컨테이너 */
+.center-container {
+    align: center middle;
+    width: 100%;
+    height: 100%;
+}
+
+/* 폼 레이아웃 */
+.form-container {
+    layout: vertical;
+    padding: 1 2;
+    height: auto;
+}
+
+.form-row {
+    height: 3;
+    margin-bottom: 1;
+    layout: horizontal;
+}
+
+.form-label {
+    color: $text-subtle;
+    width: 20;
+    height: 3;
+    content-align: left middle;
+}
+
+.form-field {
+    width: 1fr;
+}
+
+/* 수평 버튼 그룹 */
+.button-row {
+    layout: horizontal;
+    height: 3;
+    align: right middle;
+    padding: 1 0 0 0;
+}
+
+.button-row Button {
+    margin-left: 1;
+}
+
+/* 섹션 구분선 */
+.section-title {
+    color: $primary-light;
+    text-style: bold;
+    padding: 0 0 1 0;
+    border-bottom: tall $border;
+    margin-bottom: 1;
+}
+
+/* 강조 텍스트 */
+.text-success {
+    color: $success;
+}
+
+.text-warning {
+    color: $warning;
+}
+
+.text-error {
+    color: $error;
+}
+
+.text-info {
+    color: $info;
+}
+
+.text-muted {
+    color: $text-muted;
+}
+
+.text-primary {
+    color: $primary-light;
+}
+
+/* =========================================================================
+ * 13. 스크롤바 공통 (전역)
+ * ========================================================================= */
+
+* {
+    scrollbar-color: $overlay;
+    scrollbar-background: $background;
+    scrollbar-corner-color: $background;
+}
+
+/* =========================================================================
+ * 14. ConfigScreen (T11.1)
+ * ========================================================================= */
+
+ConfigScreen .form-container {
+    padding: 1 2;
+    height: 1fr;
+}
+
+ConfigScreen #preset-table {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+/* =========================================================================
+ * 15. HistoryScreen (T11.2)
+ * ========================================================================= */
+
+HistoryScreen .form-container {
+    padding: 1 2;
+    height: 1fr;
+}
+
+HistoryScreen #history-table {
+    height: 1fr;
+    margin-bottom: 1;
+}

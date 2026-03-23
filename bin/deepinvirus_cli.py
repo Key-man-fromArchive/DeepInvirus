@@ -1,0 +1,340 @@
+#!/usr/bin/env python3
+# @TASK T12.1 - CLI entrypoint (Click-based)
+# @SPEC docs/planning/06-tasks-tui.md#phase-12-t121-cli-엔트리포인트-redgreen
+# @SPEC docs/planning/03-user-flow.md#6-CLI-명령어-목록
+# @TEST tests/test_cli.py
+"""
+DeepInvirus CLI entrypoint.
+
+Provides both TUI (interactive) and CLI (batch) modes:
+
+    # TUI mode (no subcommand)
+    deepinvirus
+
+    # CLI mode (subcommands)
+    deepinvirus run --reads ./data --host insect --outdir ./results
+    deepinvirus install-db --db-dir /path/to/db
+    deepinvirus update-db --db-dir /path/to/db --component taxonomy
+    deepinvirus add-host --name beetle --fasta ref.fa --db-dir /path/to/db
+    deepinvirus list-hosts --db-dir /path/to/db
+    deepinvirus config
+    deepinvirus history
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import click
+
+# Ensure bin/ is on sys.path so that sibling modules can be imported
+_BIN_DIR = Path(__file__).resolve().parent
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
+
+
+# ---------------------------------------------------------------------------
+# Main CLI group
+# ---------------------------------------------------------------------------
+
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
+    """DeepInvirus - Viral Metagenomics Pipeline with TUI.
+
+    Run without a subcommand to launch the interactive TUI.
+    Use a subcommand for batch/scripting usage.
+    """
+    if ctx.invoked_subcommand is None:
+        # No subcommand -> launch TUI
+        try:
+            from tui.app import DeepInVirusApp
+
+            app = DeepInVirusApp()
+            app.run()
+        except ImportError as exc:
+            click.echo(
+                f"Error: Could not import TUI components: {exc}\n"
+                "Make sure 'textual' is installed: pip install textual",
+                err=True,
+            )
+            ctx.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# run: Execute the DeepInvirus analysis pipeline
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option("--reads", required=True, help="Input FASTQ directory or file (glob pattern).")
+@click.option("--host", default="human", help="Host genome name for read decontamination.")
+@click.option("--outdir", default="./results", help="Output directory.")
+@click.option(
+    "--assembler",
+    default="megahit",
+    type=click.Choice(["megahit", "metaspades"], case_sensitive=False),
+    help="De novo assembler to use.",
+)
+@click.option(
+    "--search",
+    default="sensitive",
+    type=click.Choice(["fast", "sensitive"], case_sensitive=False),
+    help="Diamond search sensitivity.",
+)
+@click.option("--skip-ml", is_flag=True, default=False, help="Skip geNomad ML detection.")
+@click.option("--threads", default=None, type=int, help="Number of threads (default: all available).")
+@click.option("--db-dir", default=None, type=click.Path(), help="Path to reference databases.")
+@click.option("--resume", is_flag=True, default=False, help="Resume a previous run with -resume.")
+def run(reads, host, outdir, assembler, search, skip_ml, threads, db_dir, resume):
+    """Run the DeepInvirus analysis pipeline.
+
+    Launches the Nextflow pipeline (main.nf) with the specified parameters.
+    """
+    # Build Nextflow command
+    cmd = ["nextflow", "run", str(_BIN_DIR.parent / "main.nf")]
+    cmd += ["--reads", reads]
+    cmd += ["--host", host]
+    cmd += ["--outdir", outdir]
+    cmd += ["--assembler", assembler]
+    cmd += ["--search", search]
+
+    if skip_ml:
+        cmd += ["--skip_ml", "true"]
+    if threads is not None:
+        cmd += ["--threads", str(threads)]
+    if db_dir is not None:
+        cmd += ["--db_dir", db_dir]
+    if resume:
+        cmd += ["-resume"]
+
+    click.echo(f"Running: {' '.join(cmd)}")
+    try:
+        result = subprocess.run(cmd, check=False)
+        sys.exit(result.returncode)
+    except FileNotFoundError:
+        click.echo(
+            "Error: 'nextflow' not found. Please install Nextflow first.\n"
+            "See: https://www.nextflow.io/docs/latest/getstarted.html",
+            err=True,
+        )
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# install-db: Install reference databases
+# ---------------------------------------------------------------------------
+
+
+@cli.command("install-db")
+@click.option("--db-dir", required=True, type=click.Path(), help="Database directory.")
+@click.option("--components", default="all", help="Components to install (comma-separated or 'all').")
+@click.option("--host", default="human", help="Host genome to download.")
+@click.option("--threads", default=4, type=int, help="Number of threads for indexing.")
+@click.option("--dry-run", is_flag=True, default=False, help="Preview without downloading.")
+def install_db(db_dir, components, host, threads, dry_run):
+    """Install reference databases.
+
+    Downloads and indexes all reference databases required by the pipeline.
+    """
+    from install_databases import install
+
+    install(
+        db_dir=Path(db_dir),
+        components=components,
+        host=host,
+        threads=threads,
+        dry_run=dry_run,
+    )
+
+
+# ---------------------------------------------------------------------------
+# update-db: Update specific database component
+# ---------------------------------------------------------------------------
+
+
+@cli.command("update-db")
+@click.option("--db-dir", required=True, type=click.Path(exists=True), help="Database directory.")
+@click.option("--component", required=True, help="Component(s) to update (comma-separated or 'all').")
+@click.option("--host", default="human", help="Host genome key (when updating host).")
+@click.option("--threads", default=4, type=int, help="Number of threads for indexing.")
+@click.option("--dry-run", is_flag=True, default=False, help="Preview without modifying.")
+@click.option("--force", is_flag=True, default=False, help="Force update even if up-to-date.")
+def update_db(db_dir, component, host, threads, dry_run, force):
+    """Update specific database component.
+
+    Selectively updates individual database components with automatic
+    backup/rollback.
+    """
+    from update_databases import COMPONENT_MAP, update_component
+
+    if component == "all":
+        components = list(COMPONENT_MAP.keys())
+    else:
+        components = [c.strip() for c in component.split(",")]
+
+    for comp in components:
+        update_component(
+            db_dir=Path(db_dir),
+            component=comp,
+            host=host,
+            threads=threads,
+            dry_run=dry_run,
+            force=force,
+        )
+
+
+# ---------------------------------------------------------------------------
+# add-host: Add a custom host genome
+# ---------------------------------------------------------------------------
+
+
+@cli.command("add-host")
+@click.option("--name", required=True, help="Host genome name (e.g., beetle, chicken).")
+@click.option("--fasta", required=True, type=click.Path(exists=True), help="Reference genome FASTA file.")
+@click.option("--db-dir", required=True, type=click.Path(), help="Root database directory.")
+@click.option("--threads", default=4, type=int, help="Threads for minimap2 indexing.")
+@click.option("--skip-index", is_flag=True, default=False, help="Skip minimap2 index build.")
+def add_host_cmd(name, fasta, db_dir, threads, skip_index):
+    """Add a custom host genome.
+
+    Copies FASTA, builds minimap2 index, and updates VERSION.json.
+    """
+    from add_host import add_host
+
+    add_host(
+        name=name,
+        fasta=Path(fasta),
+        db_dir=Path(db_dir),
+        threads=threads,
+        skip_index=skip_index,
+    )
+
+
+# ---------------------------------------------------------------------------
+# list-hosts: List available host genomes
+# ---------------------------------------------------------------------------
+
+
+@cli.command("list-hosts")
+@click.option("--db-dir", required=True, type=click.Path(exists=True), help="Root database directory.")
+def list_hosts(db_dir):
+    """List available host genomes.
+
+    Reads VERSION.json and shows installed host genomes with their metadata.
+    """
+    version_file = Path(db_dir) / "VERSION.json"
+    if not version_file.exists():
+        click.echo("No VERSION.json found. Run 'install-db' first.")
+        return
+
+    with open(version_file) as f:
+        data = json.load(f)
+
+    hosts = data.get("databases", {}).get("host_genomes", {})
+    if not hosts:
+        click.echo("No host genomes installed.")
+        return
+
+    click.echo(f"{'Name':<15} {'Downloaded':<12} {'Format':<10}")
+    click.echo("-" * 37)
+    for name, meta in sorted(hosts.items()):
+        downloaded = meta.get("downloaded_at", "unknown")
+        fmt = meta.get("format", "unknown")
+        click.echo(f"{name:<15} {downloaded:<12} {fmt:<10}")
+
+
+# ---------------------------------------------------------------------------
+# config: Manage configuration presets
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option("--list", "list_presets_flag", is_flag=True, default=False, help="List saved presets.")
+@click.option("--show", default=None, help="Show details of a preset.")
+@click.option("--delete", default=None, help="Delete a preset.")
+def config(list_presets_flag, show, delete):
+    """Manage configuration presets.
+
+    View, inspect, or delete saved pipeline parameter presets.
+    """
+    from config_manager import delete_preset, get_preset_details, list_presets
+
+    if delete:
+        ok = delete_preset(delete)
+        if ok:
+            click.echo(f"Preset '{delete}' deleted.")
+        else:
+            click.echo(f"Preset '{delete}' not found.")
+        return
+
+    if show:
+        try:
+            details = get_preset_details(show)
+            click.echo(json.dumps(details, indent=2, ensure_ascii=False))
+        except FileNotFoundError:
+            click.echo(f"Preset '{show}' not found.")
+        return
+
+    # Default: list presets
+    presets = list_presets()
+    if not presets:
+        click.echo("No presets saved. Use the TUI to create presets.")
+        return
+
+    click.echo("Saved presets:")
+    for name in presets:
+        click.echo(f"  - {name}")
+
+
+# ---------------------------------------------------------------------------
+# history: View run history
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option("--list", "list_flag", is_flag=True, default=False, help="List run history.")
+@click.option("--show", default=None, help="Show details of a specific run by ID.")
+@click.option("--limit", default=20, type=int, help="Maximum entries to display.")
+def history(list_flag, show, limit):
+    """View run history.
+
+    Display past pipeline runs with their status, duration, and parameters.
+    """
+    from history_manager import get_history, get_run
+
+    if show:
+        record = get_run(show)
+        if record:
+            click.echo(json.dumps(record, indent=2, ensure_ascii=False))
+        else:
+            click.echo(f"Run '{show}' not found.")
+        return
+
+    # Default: list history
+    records = get_history(limit=limit)
+    if not records:
+        click.echo("No run history found.")
+        return
+
+    click.echo(f"{'Run ID':<20} {'Status':<10} {'Date':<22} {'Duration':<10}")
+    click.echo("-" * 62)
+    for r in records:
+        run_id = r.get("run_id", "?")[:18]
+        status = r.get("status", "?")
+        recorded = r.get("recorded_at", "?")[:19]
+        dur = r.get("duration", 0)
+        dur_str = f"{dur:.0f}s" if isinstance(dur, (int, float)) else str(dur)
+        click.echo(f"{run_id:<20} {status:<10} {recorded:<22} {dur_str:<10}")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    cli()

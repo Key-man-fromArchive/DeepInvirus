@@ -1,0 +1,6 @@
+taxon	taxid	rank	sample_A	sample_B	sample_C
+Ebolavirus	40566	genus	1230.5	0.0	0.0
+Enterovirus	12059	genus	644.2	0.0	0.0
+Asfarvirus	40359	genus	0.0	450.3	0.0
+Lentivirus	11627	genus	0.0	785.8	0.0
+Orthopoxvirus	10244	genus	0.0	0.0	1567.3
