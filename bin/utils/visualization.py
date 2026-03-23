@@ -133,8 +133,14 @@ def plot_heatmap(
     if matrix_df.empty:
         raise ValueError("Cannot plot heatmap: matrix is empty")
 
+    # Ensure taxon column is index, not data
+    hm_df = matrix_df.copy()
+    if "taxon" in hm_df.columns:
+        hm_df = hm_df.set_index("taxon")
+    hm_df = hm_df.apply(pd.to_numeric, errors="coerce").fillna(0)
+
     # Log10 transform (add pseudocount)
-    log_matrix = np.log10(matrix_df.astype(float) + 1)
+    log_matrix = np.log10(hm_df.astype(float) + 1)
 
     # Figure size scales with matrix dimensions (section 6.2: 10x8 base)
     n_rows, n_cols = log_matrix.shape
@@ -199,8 +205,15 @@ def plot_barplot(
     if matrix_df.empty:
         raise ValueError("Cannot plot barplot: matrix is empty")
 
+    # Ensure taxon/index column is not mixed with numeric data
+    df = matrix_df.copy()
+    if "taxon" in df.columns:
+        df = df.set_index("taxon")
+    # Convert all columns to numeric
+    df = df.apply(pd.to_numeric, errors="coerce").fillna(0)
+
     # Compute relative abundance per sample (column-wise)
-    rel_abundance = matrix_df.div(matrix_df.sum(axis=0), axis=1).fillna(0)
+    rel_abundance = df.div(df.sum(axis=0), axis=1).fillna(0)
 
     # Select top-N taxa by mean relative abundance
     mean_abundance = rel_abundance.mean(axis=1).sort_values(ascending=False)
