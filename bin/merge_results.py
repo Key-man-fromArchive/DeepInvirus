@@ -169,21 +169,31 @@ def load_detection(path: Path) -> pd.DataFrame:
 
 
 def load_sample_map(path: Path) -> pd.DataFrame:
-    """Load sample mapping file."""
-    df = pd.read_csv(path, sep="\t")
-    df.columns = df.columns.str.strip()
-    # Ensure string types for join keys
-    df["seq_id"] = df["seq_id"].astype(str)
-    df["sample"] = df["sample"].astype(str)
-    df["seq_type"] = df["seq_type"].astype(str)
-    return df
+    """Load sample mapping file. Returns empty DataFrame if file is missing or malformed."""
+    try:
+        df = pd.read_csv(path, sep="\t")
+        df.columns = df.columns.str.strip()
+        if "seq_id" in df.columns:
+            df["seq_id"] = df["seq_id"].astype(str)
+            df["sample"] = df["sample"].astype(str)
+            df["seq_type"] = df["seq_type"].astype(str) if "seq_type" in df.columns else "contig"
+            return df
+    except Exception:
+        pass
+    # Return empty DataFrame with expected columns
+    return pd.DataFrame(columns=["seq_id", "sample", "seq_type", "total_reads", "count"])
 
 
 def load_ictv(path: Path) -> pd.DataFrame:
-    """Load ICTV VMR classification mapping."""
-    df = pd.read_csv(path, sep="\t", dtype=str)
-    df.columns = df.columns.str.strip()
-    return df
+    """Load ICTV VMR classification mapping. Returns empty DataFrame if unavailable."""
+    try:
+        df = pd.read_csv(path, sep="\t", dtype=str)
+        df.columns = df.columns.str.strip()
+        if len(df) > 0:
+            return df
+    except Exception:
+        pass
+    return pd.DataFrame(columns=["Family", "Genus", "Species", "ICTV_classification"])
 
 
 def build_bigtable(
