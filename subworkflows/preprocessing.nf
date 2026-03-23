@@ -22,8 +22,11 @@ workflow PREPROCESSING {
         // Build minimap2 index from host genome FASTA
         HOST_INDEX( ch_host_genome )
 
+        // Collect index so it can be reused for all samples
+        ch_index = HOST_INDEX.out.index.collect()
+
         // Remove host reads using minimap2 alignment
-        HOST_REMOVAL( ch_trimmed_reads, HOST_INDEX.out.index )
+        HOST_REMOVAL( ch_trimmed_reads, ch_index )
 
         ch_filtered_reads = HOST_REMOVAL.out.reads
         ch_host_stats     = HOST_REMOVAL.out.stats
