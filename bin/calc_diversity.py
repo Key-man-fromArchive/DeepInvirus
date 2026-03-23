@@ -222,6 +222,8 @@ def compute_bray_curtis_matrix(
         Symmetric distance matrix as DataFrame.
     """
     n = len(sample_cols)
+    if n == 0:
+        return pd.DataFrame()
     dist_matrix = np.zeros((n, n))
 
     for i in range(n):
@@ -309,8 +311,11 @@ def main(argv: list[str] | None = None) -> int:
     sample_cols = [c for c in matrix.columns if c not in meta_cols]
 
     if not sample_cols:
-        print("ERROR: No sample columns found in matrix.", file=sys.stderr)
-        return 1
+        print("WARNING: No sample columns found in matrix. Generating empty outputs.", file=sys.stderr)
+        pd.DataFrame(columns=["sample", "observed_species", "shannon", "simpson", "chao1", "pielou_evenness"]).to_csv(args.out_alpha, sep="\t", index=False)
+        pd.DataFrame().to_csv(args.out_beta, sep="\t", index=True)
+        pd.DataFrame(columns=["sample", "PC1", "PC2"]).to_csv(args.out_pcoa, sep="\t", index=False)
+        return 0
 
     # Ensure numeric values
     for col in sample_cols:
