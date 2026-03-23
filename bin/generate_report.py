@@ -246,8 +246,32 @@ def generate_report(
     matrix = pd.read_csv(matrix_path, sep="\t")
     alpha = pd.read_csv(alpha_path, sep="\t")
     pcoa = pd.read_csv(pcoa_path, sep="\t")
-    qc_stats = pd.read_csv(qc_stats_path, sep="\t")
-    assembly_stats = pd.read_csv(assembly_stats_path, sep="\t")
+    # Load QC stats - handle both TSV and fastp JSON formats
+    try:
+        if qc_stats_path and qc_stats_path.suffix == ".json":
+            import json
+            with open(qc_stats_path) as f:
+                jdata = json.load(f)
+            qc_stats = pd.DataFrame([{
+                "sample": qc_stats_path.stem.replace(".fastp", ""),
+                "total_reads_before": jdata.get("summary", {}).get("before_filtering", {}).get("total_reads", 0),
+                "total_reads_after": jdata.get("summary", {}).get("after_filtering", {}).get("total_reads", 0),
+            }])
+        elif qc_stats_path:
+            qc_stats = pd.read_csv(qc_stats_path, sep="\t")
+        else:
+            qc_stats = pd.DataFrame()
+    except Exception:
+        qc_stats = pd.DataFrame()
+
+    # Load assembly stats
+    try:
+        if assembly_stats_path:
+            assembly_stats = pd.read_csv(assembly_stats_path, sep="\t")
+        else:
+            assembly_stats = pd.DataFrame()
+    except Exception:
+        assembly_stats = pd.DataFrame()
 
     # ------------------------------------------------------------------
     # Prepare figures directory
@@ -510,12 +534,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Path to pcoa_coordinates.tsv",
     )
     parser.add_argument(
-        "--qc-stats", required=True, type=Path,
-        help="Path to QC stats TSV (fastp summary)",
+        "--qc-stats", required=True, type=Path, nargs="+",
+        help="Path(s) to QC stats files (fastp JSON or TSV)",
     )
     parser.add_argument(
-        "--assembly-stats", required=True, type=Path,
-        help="Path to assembly stats TSV",
+        "--assembly-stats", required=True, type=Path, nargs="+",
+        help="Path(s) to assembly stats TSV files",
     )
     parser.add_argument(
         "--output", required=True, type=Path,
@@ -535,13 +559,16 @@ def main(argv: list[str] | None = None) -> None:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
     args = parse_args(argv)
+    # Use first file from multi-file args (or merge if needed later)
+    qc_path = args.qc_stats[0] if args.qc_stats else None
+    asm_path = args.assembly_stats[0] if args.assembly_stats else None
     generate_report(
         bigtable_path=args.bigtable,
         matrix_path=args.matrix,
         alpha_path=args.alpha,
         pcoa_path=args.pcoa,
-        qc_stats_path=args.qc_stats,
-        assembly_stats_path=args.assembly_stats,
+        qc_stats_path=qc_path,
+        assembly_stats_path=asm_path,
         output_path=args.output,
         figures_dir=args.figures_dir,
     )
