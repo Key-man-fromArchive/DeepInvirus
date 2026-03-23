@@ -1,191 +1,222 @@
 #!/usr/bin/env python3
-"""Merge all classification results into a unified bigtable.
+"""Merge all per-sample classification results into a unified bigtable.
 
 # @TASK T4.2 - bigtable generation
 # @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
 # @SPEC docs/planning/04-database-design.md#4.1-bigtable
-# @TEST tests/modules/test_classification.py
 
 Usage:
     python merge_results.py \\
-        --taxonomy taxonomy.tsv \\
-        --lineage lineage.tsv \\
-        --coverage coverage.tsv \\
-        --detection detection.tsv \\
+        --taxonomy GC_Tm_taxonomy.tsv Inf_NB_Tm_taxonomy.tsv \\
+        --lineage GC_Tm_lineage.tsv Inf_NB_Tm_lineage.tsv \\
+        --coverage GC_Tm_coverage.tsv Inf_NB_Tm_coverage.tsv \\
+        --detection GC_Tm_merged_detection.tsv Inf_NB_Tm_merged_detection.tsv \\
         --sample-map sample_map.tsv \\
         --ictv ictv_vmr.tsv \\
         --out-bigtable bigtable.tsv \\
         --out-matrix sample_taxon_matrix.tsv \\
         --out-counts sample_counts.tsv
 
-Inputs:
-    - taxonomy: MMseqs2 taxonomy output (query, taxid, rank, name)
-    - lineage:  TaxonKit 7-rank lineage (taxid, lineage, domain..species)
-    - coverage: CoverM coverage (Contig, Mean, Trimmed Mean, Covered Bases, Length)
-    - detection: merged detection results (seq_id, length, detection_method, detection_score, taxonomy, taxid, subject_id)
-    - sample-map: seq_id -> sample, seq_type, total_reads, count mapping
-    - ictv: ICTV VMR (family, genus, species, baltimore_group, ictv_classification)
+Inputs (per-sample files, sample name extracted from filename):
+    - taxonomy:  MMseqs2 easy-search output (query, target, pident, evalue, bitscore)
+    - lineage:   TaxonKit lineage or pass-through copy of taxonomy
+    - coverage:  CoverM coverage (Contig, <sample> Mean, ...)
+    - detection: merged detection (seq_id, length, detection_method, detection_score, taxonomy, taxid, subject_id)
+    - sample-map: sample group mapping (sample, group) -- optional content
+    - ictv:      ICTV VMR (Family, Genus, Species, ICTV_classification) -- optional content
 
 Outputs:
-    - bigtable.tsv: 04-database-design.md section 4.1 schema
-    - sample_taxon_matrix.tsv: section 4.2 schema (pivot table, RPM values)
-    - sample_counts.tsv: sample x taxon raw counts
+    - bigtable.tsv:           all info merged
+    - sample_taxon_matrix.tsv: sample x family pivot (count-based)
+    - sample_counts.tsv:       sample x seq_id counts
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
 import pandas as pd
 
 
-# @TASK T4.2 - bigtable column order (must match 04-database-design.md 4.1)
-BIGTABLE_COLUMNS = [
-    "seq_id",
-    "sample",
-    "seq_type",
-    "length",
-    "detection_method",
-    "detection_score",
-    "taxid",
-    "domain",
-    "phylum",
-    "class",
-    "order",
-    "family",
-    "genus",
-    "species",
-    "ictv_classification",
-    "baltimore_group",
-    "count",
-    "rpm",
-    "coverage",
+# ---------------------------------------------------------------------------
+# Filename -> sample name extraction
+# ---------------------------------------------------------------------------
+
+# Suffixes to strip from filenames to get sample names
+_SUFFIX_PATTERNS = [
+    r"_merged_detection\.tsv$",
+    r"_taxonomy\.tsv$",
+    r"_lineage\.tsv$",
+    r"_coverage\.tsv$",
 ]
 
 
+def extract_sample_name(filepath: str | Path) -> str:
+    """Extract sample name from a per-sample filename.
+
+    Examples:
+        GC_Tm_merged_detection.tsv  -> GC_Tm
+        Inf_NB_Tm_taxonomy.tsv      -> Inf_NB_Tm
+    """
+    name = Path(filepath).name
+    for pat in _SUFFIX_PATTERNS:
+        m = re.search(pat, name)
+        if m:
+            return name[: m.start()]
+    # Fallback: strip .tsv
+    return name.removesuffix(".tsv")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Merge classification results into bigtable and pivot tables.",
+    p = argparse.ArgumentParser(
+        description="Merge per-sample classification results into bigtable.",
     )
-    parser.add_argument(
-        "--taxonomy",
-        required=True,
-        type=Path,
-        help="MMseqs2 taxonomy TSV (query, taxid, rank, name)",
-    )
-    parser.add_argument(
-        "--lineage",
-        required=True,
-        type=Path,
-        help="TaxonKit lineage TSV (taxid, lineage, domain..species)",
-    )
-    parser.add_argument(
-        "--coverage",
-        required=True,
-        type=Path,
-        help="CoverM coverage TSV (Contig, Mean, ...)",
-    )
-    parser.add_argument(
-        "--detection",
-        required=True,
-        type=Path,
-        help="Merged detection TSV (seq_id, length, detection_method, ...)",
-    )
-    parser.add_argument(
-        "--sample-map",
-        required=True,
-        type=Path,
-        help="Sample mapping TSV (seq_id, sample, seq_type, total_reads, count)",
-    )
-    parser.add_argument(
-        "--ictv",
-        required=True,
-        type=Path,
-        help="ICTV VMR TSV (family, genus, species, baltimore_group, ictv_classification)",
-    )
-    parser.add_argument(
-        "--out-bigtable",
-        required=True,
-        type=Path,
-        help="Output bigtable TSV path",
-    )
-    parser.add_argument(
-        "--out-matrix",
-        required=True,
-        type=Path,
-        help="Output sample-taxon matrix TSV path",
-    )
-    parser.add_argument(
-        "--out-counts",
-        required=True,
-        type=Path,
-        help="Output sample counts TSV path",
-    )
-    return parser.parse_args(argv)
+    p.add_argument("--taxonomy", nargs="+", type=Path, required=True,
+                    help="Per-sample MMseqs2 taxonomy TSV files")
+    p.add_argument("--lineage", nargs="+", type=Path, required=True,
+                    help="Per-sample TaxonKit lineage TSV files")
+    p.add_argument("--coverage", nargs="+", type=Path, required=True,
+                    help="Per-sample CoverM coverage TSV files")
+    p.add_argument("--detection", nargs="+", type=Path, required=True,
+                    help="Per-sample merged detection TSV files")
+    p.add_argument("--sample-map", type=Path, required=True,
+                    help="Sample mapping TSV (sample, group)")
+    p.add_argument("--ictv", type=Path, required=True,
+                    help="ICTV VMR TSV")
+    p.add_argument("--out-bigtable", type=Path, required=True)
+    p.add_argument("--out-matrix", type=Path, required=True)
+    p.add_argument("--out-counts", type=Path, required=True)
+    return p.parse_args(argv)
 
 
-def load_taxonomy(path: Path) -> pd.DataFrame:
-    """Load MMseqs2 taxonomy output."""
-    df = pd.read_csv(path, sep="\t", dtype=str)
-    df.columns = df.columns.str.strip()
-    # Rename 'query' to 'seq_id' for joining
-    if "query" in df.columns:
-        df = df.rename(columns={"query": "seq_id"})
-    return df
+# ---------------------------------------------------------------------------
+# Loaders (per-sample, return list of DataFrames with 'sample' column)
+# ---------------------------------------------------------------------------
+
+def load_detection_files(paths: list[Path]) -> pd.DataFrame:
+    """Load and concatenate per-sample detection files.
+
+    Expected columns: seq_id, length, detection_method, detection_score, taxonomy, taxid, subject_id
+    Adds 'sample' column derived from filename.
+    """
+    frames = []
+    for p in paths:
+        sample = extract_sample_name(p)
+        try:
+            df = pd.read_csv(p, sep="\t", dtype=str)
+        except pd.errors.EmptyDataError:
+            continue
+        df.columns = df.columns.str.strip()
+        df["sample"] = sample
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame(columns=[
+            "seq_id", "length", "detection_method", "detection_score",
+            "taxonomy", "taxid", "subject_id", "sample",
+        ])
+    return pd.concat(frames, ignore_index=True)
 
 
-def load_lineage(path: Path) -> pd.DataFrame:
-    """Load TaxonKit lineage output with 7-rank columns."""
-    df = pd.read_csv(path, sep="\t", dtype=str)
-    df.columns = df.columns.str.strip()
-    return df
+def load_taxonomy_files(paths: list[Path]) -> pd.DataFrame:
+    """Load and concatenate per-sample taxonomy files (MMseqs2 easy-search format).
+
+    Expected columns: query, target, pident, evalue, bitscore
+    Adds 'sample' column.
+    """
+    frames = []
+    for p in paths:
+        sample = extract_sample_name(p)
+        try:
+            df = pd.read_csv(p, sep="\t", dtype=str)
+        except pd.errors.EmptyDataError:
+            continue
+        df.columns = df.columns.str.strip()
+        if "query" in df.columns:
+            df = df.rename(columns={"query": "seq_id"})
+        df["sample"] = sample
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame(columns=["seq_id", "target", "pident", "evalue", "bitscore", "sample"])
+    return pd.concat(frames, ignore_index=True)
 
 
-def load_coverage(path: Path) -> pd.DataFrame:
-    """Load CoverM coverage output."""
-    df = pd.read_csv(path, sep="\t")
-    df.columns = df.columns.str.strip()
-    # Rename Contig -> seq_id, Mean -> coverage
-    rename_map = {}
-    if "Contig" in df.columns:
-        rename_map["Contig"] = "seq_id"
-    if "Mean" in df.columns:
-        rename_map["Mean"] = "coverage"
-    df = df.rename(columns=rename_map)
-    # Keep only seq_id and coverage
-    if "seq_id" in df.columns and "coverage" in df.columns:
-        df = df[["seq_id", "coverage"]]
-    return df
+def load_coverage_files(paths: list[Path]) -> pd.DataFrame:
+    """Load and concatenate per-sample CoverM coverage files.
+
+    CoverM column names are dynamic (include sample-specific path info).
+    We take the first column as Contig (seq_id) and the second column as coverage (Mean).
+    Adds 'sample' column.
+    """
+    frames = []
+    for p in paths:
+        sample = extract_sample_name(p)
+        try:
+            df = pd.read_csv(p, sep="\t")
+        except pd.errors.EmptyDataError:
+            continue
+        if len(df.columns) < 2:
+            continue
+        # Use positional columns: 0=Contig, 1=Mean coverage
+        cov = pd.DataFrame({
+            "seq_id": df.iloc[:, 0].astype(str),
+            "coverage": pd.to_numeric(df.iloc[:, 1], errors="coerce").fillna(0.0),
+        })
+        cov["sample"] = sample
+        frames.append(cov)
+    if not frames:
+        return pd.DataFrame(columns=["seq_id", "coverage", "sample"])
+    return pd.concat(frames, ignore_index=True)
 
 
-def load_detection(path: Path) -> pd.DataFrame:
-    """Load merged detection results."""
-    df = pd.read_csv(path, sep="\t", dtype=str)
-    df.columns = df.columns.str.strip()
-    return df
+def load_lineage_files(paths: list[Path]) -> pd.DataFrame:
+    """Load lineage files. These may be proper TaxonKit output or just a copy of taxonomy.
+
+    If proper TaxonKit format (taxid, lineage, domain..species), return as-is.
+    If it looks like taxonomy (query, target, pident...), return empty lineage.
+    """
+    frames = []
+    for p in paths:
+        sample = extract_sample_name(p)
+        try:
+            df = pd.read_csv(p, sep="\t", dtype=str)
+        except pd.errors.EmptyDataError:
+            continue
+        df.columns = df.columns.str.strip()
+        # Check if this is real lineage data (has taxid + domain columns)
+        if "taxid" in df.columns and "domain" in df.columns and len(df) > 0:
+            df["sample"] = sample
+            frames.append(df)
+        # Otherwise it is a pass-through copy of taxonomy -- skip
+    if not frames:
+        return pd.DataFrame(columns=[
+            "taxid", "lineage", "domain", "phylum", "class",
+            "order", "family", "genus", "species", "sample",
+        ])
+    return pd.concat(frames, ignore_index=True)
 
 
 def load_sample_map(path: Path) -> pd.DataFrame:
-    """Load sample mapping file. Returns empty DataFrame if file is missing or malformed."""
+    """Load sample_map.tsv (sample, group). Returns empty DataFrame if missing/empty."""
     try:
-        df = pd.read_csv(path, sep="\t")
+        df = pd.read_csv(path, sep="\t", dtype=str)
         df.columns = df.columns.str.strip()
-        if "seq_id" in df.columns:
-            df["seq_id"] = df["seq_id"].astype(str)
-            df["sample"] = df["sample"].astype(str)
-            df["seq_type"] = df["seq_type"].astype(str) if "seq_type" in df.columns else "contig"
+        if "sample" in df.columns and len(df) > 0:
             return df
     except Exception:
         pass
-    # Return empty DataFrame with expected columns
-    return pd.DataFrame(columns=["seq_id", "sample", "seq_type", "total_reads", "count"])
+    return pd.DataFrame(columns=["sample", "group"])
 
 
 def load_ictv(path: Path) -> pd.DataFrame:
-    """Load ICTV VMR classification mapping. Returns empty DataFrame if unavailable."""
+    """Load ICTV VMR. Returns empty DataFrame if missing/empty."""
     try:
         df = pd.read_csv(path, sep="\t", dtype=str)
         df.columns = df.columns.str.strip()
@@ -196,207 +227,195 @@ def load_ictv(path: Path) -> pd.DataFrame:
     return pd.DataFrame(columns=["Family", "Genus", "Species", "ICTV_classification"])
 
 
+# ---------------------------------------------------------------------------
+# Extract family from detection taxonomy string
+# ---------------------------------------------------------------------------
+
+def extract_family_from_lineage_str(tax_str: str) -> str:
+    """Extract family-level name from semicolon-separated taxonomy string.
+
+    The detection 'taxonomy' column has format like:
+        Viruses;Duplodnaviria;Heunggongvirae;Uroviricota;Caudoviricetes;;
+        Viruses;Riboviria;Orthornavirae;Kitrinoviricota;Magsaviricetes;Nodamuvirales;Sinhaliviridae
+
+    Standard ICTV ranks: Domain;Kingdom;Phylum;Class;Order;Family;...
+    We attempt to find a token ending in 'viridae' (family suffix) or use
+    the 6th field (0-indexed 5) if available.
+    """
+    if not isinstance(tax_str, str) or tax_str.strip() == "":
+        return "Unclassified"
+    parts = [x.strip() for x in tax_str.split(";")]
+    # First try: find token ending in 'viridae' (standard family suffix)
+    for part in parts:
+        if part.lower().endswith("viridae"):
+            return part
+    # Fallback: 6th field (family position in ICTV 7-rank lineage)
+    # Domain(0);Kingdom(1);Phylum(2);Class(3);Order(4);Family(5);Subfamily/Genus(6)
+    if len(parts) > 5 and parts[5].strip():
+        return parts[5]
+    # Last resort: deepest non-empty rank
+    for part in reversed(parts):
+        if part.strip():
+            return part
+    return "Unclassified"
+
+
+# ---------------------------------------------------------------------------
+# Build outputs
+# ---------------------------------------------------------------------------
+
 def build_bigtable(
     detection: pd.DataFrame,
     taxonomy: pd.DataFrame,
-    lineage: pd.DataFrame,
     coverage: pd.DataFrame,
+    lineage: pd.DataFrame,
     sample_map: pd.DataFrame,
     ictv: pd.DataFrame,
 ) -> pd.DataFrame:
     """Merge all data sources into the bigtable.
 
-    Returns:
-        DataFrame with columns matching BIGTABLE_COLUMNS.
+    Output columns:
+        seq_id, sample, length, detection_method, detection_score,
+        taxonomy (lineage string), target, pident, evalue, coverage, group, family
     """
-    # Start from detection results (one row per seq_id)
-    bt = detection[["seq_id", "detection_method", "detection_score"]].copy()
+    # --- Base: detection (one row per seq_id per sample) ---
+    bt = detection.copy()
+    bt["length"] = pd.to_numeric(bt["length"], errors="coerce").fillna(0).astype(int)
     bt["detection_score"] = pd.to_numeric(bt["detection_score"], errors="coerce")
 
-    # Merge sample info
-    bt = bt.merge(sample_map, on="seq_id", how="left")
+    # --- Extract family from detection taxonomy string ---
+    if "taxonomy" in bt.columns:
+        bt["family"] = bt["taxonomy"].apply(extract_family_from_lineage_str)
+    else:
+        bt["family"] = "Unclassified"
 
-    # Merge length from detection
-    if "length" in detection.columns:
-        bt = bt.merge(
-            detection[["seq_id", "length"]].drop_duplicates(),
-            on="seq_id",
-            how="left",
-            suffixes=("", "_det"),
+    # --- Merge taxonomy (MMseqs2 hits) ---
+    if not taxonomy.empty:
+        # Keep best hit per (seq_id, sample)
+        tax = taxonomy.copy()
+        tax["bitscore"] = pd.to_numeric(tax["bitscore"], errors="coerce").fillna(0)
+        tax = tax.sort_values("bitscore", ascending=False).drop_duplicates(
+            subset=["seq_id", "sample"], keep="first"
         )
-        # Use detection length if not from sample_map
-        if "length_det" in bt.columns:
-            bt["length"] = bt["length"].fillna(bt["length_det"])
-            bt.drop(columns=["length_det"], inplace=True)
+        tax_cols = ["seq_id", "sample", "target", "pident", "evalue"]
+        available = [c for c in tax_cols if c in tax.columns]
+        bt = bt.merge(tax[available], on=["seq_id", "sample"], how="left")
+    else:
+        for col in ["target", "pident", "evalue"]:
+            bt[col] = pd.NA
 
-    # Merge taxonomy (get taxid from taxonomy output)
-    if "taxid" in taxonomy.columns:
-        tax_cols = ["seq_id", "taxid"]
-        bt = bt.merge(
-            taxonomy[tax_cols].drop_duplicates(),
-            on="seq_id",
-            how="left",
-            suffixes=("", "_tax"),
-        )
-        if "taxid_tax" in bt.columns:
-            bt["taxid"] = bt["taxid"].fillna(bt["taxid_tax"])
-            bt.drop(columns=["taxid_tax"], inplace=True)
-    elif "taxid" not in bt.columns:
-        # Try from detection
-        if "taxid" in detection.columns:
-            bt = bt.merge(
-                detection[["seq_id", "taxid"]].drop_duplicates(),
-                on="seq_id",
-                how="left",
-            )
-
-    bt["taxid"] = pd.to_numeric(bt["taxid"], errors="coerce").fillna(0).astype(int)
-
-    # Merge lineage (7-rank)
-    lineage_cols = ["taxid", "domain", "phylum", "class", "order", "family", "genus", "species"]
-    available_lineage_cols = [c for c in lineage_cols if c in lineage.columns]
-    if available_lineage_cols:
-        lineage_sub = lineage[available_lineage_cols].copy()
-        lineage_sub["taxid"] = pd.to_numeric(lineage_sub["taxid"], errors="coerce").fillna(0).astype(int)
-        lineage_sub = lineage_sub.drop_duplicates(subset=["taxid"])
-        bt = bt.merge(lineage_sub, on="taxid", how="left", suffixes=("", "_lin"))
-        # Clean up duplicate columns
-        for col in ["domain", "phylum", "class", "order", "family", "genus", "species"]:
-            lin_col = f"{col}_lin"
-            if lin_col in bt.columns:
-                bt[col] = bt[col].fillna(bt[lin_col])
-                bt.drop(columns=[lin_col], inplace=True)
-
-    # Fill missing lineage columns
-    for rank in ["domain", "phylum", "class", "order", "family", "genus", "species"]:
-        if rank not in bt.columns:
-            bt[rank] = "Unclassified"
-        bt[rank] = bt[rank].fillna("Unclassified")
-
-    # Merge ICTV classification
-    if not ictv.empty and "genus" in ictv.columns:
-        ictv_sub = ictv[["genus", "ictv_classification", "baltimore_group"]].copy()
-        ictv_sub = ictv_sub.drop_duplicates(subset=["genus"])
-        bt = bt.merge(ictv_sub, on="genus", how="left", suffixes=("", "_ictv"))
-        if "ictv_classification_ictv" in bt.columns:
-            bt["ictv_classification"] = bt["ictv_classification"].fillna(
-                bt["ictv_classification_ictv"]
-            )
-            bt.drop(columns=["ictv_classification_ictv"], inplace=True)
-        if "baltimore_group_ictv" in bt.columns:
-            bt["baltimore_group"] = bt["baltimore_group"].fillna(
-                bt["baltimore_group_ictv"]
-            )
-            bt.drop(columns=["baltimore_group_ictv"], inplace=True)
-
-    for col in ["ictv_classification", "baltimore_group"]:
-        if col not in bt.columns:
-            bt[col] = "Unclassified"
-        bt[col] = bt[col].fillna("Unclassified")
-
-    # Merge coverage
+    # --- Merge coverage ---
     if not coverage.empty:
-        bt = bt.merge(coverage, on="seq_id", how="left", suffixes=("", "_cov"))
-        if "coverage_cov" in bt.columns:
-            bt["coverage"] = bt["coverage"].fillna(bt["coverage_cov"])
-            bt.drop(columns=["coverage_cov"], inplace=True)
+        cov = coverage.drop_duplicates(subset=["seq_id", "sample"], keep="first")
+        bt = bt.merge(cov[["seq_id", "sample", "coverage"]], on=["seq_id", "sample"], how="left")
     if "coverage" not in bt.columns:
         bt["coverage"] = 0.0
-
-    # Reads (seq_type=read) should have coverage=0
     bt["coverage"] = pd.to_numeric(bt["coverage"], errors="coerce").fillna(0.0)
-    bt.loc[bt["seq_type"] == "read", "coverage"] = 0.0
 
-    # Calculate RPM: count / total_reads * 1e6
-    bt["count"] = pd.to_numeric(bt["count"], errors="coerce").fillna(0).astype(int)
-    bt["total_reads"] = pd.to_numeric(bt["total_reads"], errors="coerce").fillna(1)
-    bt["rpm"] = (bt["count"] / bt["total_reads"] * 1e6).round(1)
+    # --- Merge sample_map (group info) ---
+    if not sample_map.empty and "group" in sample_map.columns:
+        bt = bt.merge(sample_map[["sample", "group"]], on="sample", how="left")
+    if "group" not in bt.columns:
+        bt["group"] = "unknown"
+    bt["group"] = bt["group"].fillna("unknown")
 
-    # Ensure length is numeric
-    bt["length"] = pd.to_numeric(bt["length"], errors="coerce").fillna(0).astype(int)
-
-    # Select and order columns
-    bt = bt[BIGTABLE_COLUMNS]
+    # --- Select and order final columns ---
+    output_cols = [
+        "seq_id", "sample", "length", "detection_method", "detection_score",
+        "taxonomy", "family", "target", "pident", "evalue", "coverage", "group",
+    ]
+    for col in output_cols:
+        if col not in bt.columns:
+            bt[col] = pd.NA
+    bt = bt[output_cols]
 
     return bt
 
 
 def build_sample_taxon_matrix(bigtable: pd.DataFrame) -> pd.DataFrame:
-    """Build sample x taxon pivot table with RPM values.
+    """Build sample x family pivot table (count-based).
 
-    Returns:
-        DataFrame with columns: taxon, taxid, rank, {sample_1}, {sample_2}, ...
+    Rows = family, Columns = samples, Values = number of contigs.
     """
-    # Use genus as the taxonomic unit for the matrix
     bt = bigtable.copy()
+    bt["family"] = bt["family"].fillna("Unclassified")
 
-    # Group by genus, aggregate RPM per sample
-    grouped = bt.groupby(["genus", "sample"])["rpm"].sum().reset_index()
+    # Count contigs per family per sample
+    grouped = bt.groupby(["family", "sample"]).size().reset_index(name="count")
 
-    # Pivot: rows=genus, columns=sample, values=RPM
     pivot = grouped.pivot_table(
-        index="genus",
+        index="family",
         columns="sample",
-        values="rpm",
-        fill_value=0.0,
+        values="count",
+        fill_value=0,
+        aggfunc="sum",
     )
     pivot = pivot.reset_index()
-    pivot = pivot.rename(columns={"genus": "taxon"})
+    pivot = pivot.rename(columns={"family": "taxon"})
 
-    # Add taxid and rank columns
-    # Get first taxid per genus from the bigtable
-    genus_taxid = bt.drop_duplicates(subset=["genus"])[["genus", "taxid"]].copy()
-    genus_taxid = genus_taxid.rename(columns={"genus": "taxon"})
-
-    pivot = pivot.merge(genus_taxid, on="taxon", how="left")
-    pivot["rank"] = "genus"
-
-    # Reorder: taxon, taxid, rank, then sample columns
-    sample_cols = sorted([c for c in pivot.columns if c not in ["taxon", "taxid", "rank"]])
-    pivot = pivot[["taxon", "taxid", "rank"] + sample_cols]
+    # Sort sample columns
+    sample_cols = sorted([c for c in pivot.columns if c != "taxon"])
+    pivot = pivot[["taxon"] + sample_cols]
 
     return pivot
 
 
 def build_sample_counts(bigtable: pd.DataFrame) -> pd.DataFrame:
-    """Build sample x taxon raw count table.
+    """Build sample-level contig counts.
 
-    Returns:
-        DataFrame with columns: sample, taxon, count
+    Output: sample, total_contigs, mean_detection_score, mean_coverage
     """
     bt = bigtable.copy()
-    counts = bt.groupby(["sample", "genus"])["count"].sum().reset_index()
-    counts = counts.rename(columns={"genus": "taxon"})
-    counts = counts[["sample", "taxon", "count"]]
+    bt["detection_score"] = pd.to_numeric(bt["detection_score"], errors="coerce")
+    bt["coverage"] = pd.to_numeric(bt["coverage"], errors="coerce")
+
+    counts = bt.groupby("sample").agg(
+        total_contigs=("seq_id", "count"),
+        mean_detection_score=("detection_score", "mean"),
+        mean_coverage=("coverage", "mean"),
+    ).reset_index()
+    counts["mean_detection_score"] = counts["mean_detection_score"].round(4)
+    counts["mean_coverage"] = counts["mean_coverage"].round(4)
+
     return counts
 
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
     args = parse_args(argv)
 
-    # Load all inputs
-    taxonomy = load_taxonomy(args.taxonomy)
-    lineage = load_lineage(args.lineage)
-    coverage = load_coverage(args.coverage)
-    detection = load_detection(args.detection)
+    # Load all per-sample inputs
+    detection = load_detection_files(args.detection)
+    taxonomy = load_taxonomy_files(args.taxonomy)
+    coverage = load_coverage_files(args.coverage)
+    lineage = load_lineage_files(args.lineage)
     sample_map = load_sample_map(args.sample_map)
     ictv = load_ictv(args.ictv)
 
-    # Build bigtable
+    print(f"Loaded detection: {len(detection)} rows from {len(args.detection)} files", file=sys.stderr)
+    print(f"Loaded taxonomy:  {len(taxonomy)} rows from {len(args.taxonomy)} files", file=sys.stderr)
+    print(f"Loaded coverage:  {len(coverage)} rows from {len(args.coverage)} files", file=sys.stderr)
+    print(f"Loaded lineage:   {len(lineage)} rows from {len(args.lineage)} files", file=sys.stderr)
+    print(f"Sample map:       {len(sample_map)} entries", file=sys.stderr)
+    print(f"ICTV VMR:         {len(ictv)} entries", file=sys.stderr)
+
+    if detection.empty:
+        print("WARNING: No detection results found. Generating empty outputs.", file=sys.stderr)
+
+    # Build outputs
     bigtable = build_bigtable(
         detection=detection,
         taxonomy=taxonomy,
-        lineage=lineage,
         coverage=coverage,
+        lineage=lineage,
         sample_map=sample_map,
         ictv=ictv,
     )
-
-    # Build sample-taxon matrix
     matrix = build_sample_taxon_matrix(bigtable)
-
-    # Build sample counts
     counts = build_sample_counts(bigtable)
 
     # Write outputs
@@ -404,10 +423,11 @@ def main(argv: list[str] | None = None) -> int:
     matrix.to_csv(args.out_matrix, sep="\t", index=False)
     counts.to_csv(args.out_counts, sep="\t", index=False)
 
+    n_samples = bigtable["sample"].nunique() if not bigtable.empty else 0
     print(
-        f"Wrote bigtable ({len(bigtable)} rows), "
-        f"matrix ({len(matrix)} taxa x {len(matrix.columns) - 3} samples), "
-        f"counts ({len(counts)} entries)",
+        f"Wrote bigtable ({len(bigtable)} rows, {n_samples} samples), "
+        f"matrix ({len(matrix)} taxa x {len(matrix.columns) - 1} samples), "
+        f"counts ({len(counts)} samples)",
         file=sys.stderr,
     )
     return 0
