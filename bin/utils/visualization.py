@@ -166,7 +166,14 @@ def plot_heatmap(
         g.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
         plt.close(g.fig)
     except Exception:
-        logger.exception("Failed to generate heatmap")
+        logger.warning("Clustermap failed, falling back to simple heatmap")
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+        sns.heatmap(log_matrix, cmap=HEATMAP_CMAP, linewidths=0.5, ax=ax)
+        ax.set_xlabel("Samples", fontsize=12)
+        ax.set_ylabel("Taxa", fontsize=12)
+        ax.set_title("Taxonomic Heatmap", fontsize=14, fontweight="bold")
+        fig.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
+        plt.close(fig)
         raise
 
     logger.info("Heatmap saved to %s", output_path)

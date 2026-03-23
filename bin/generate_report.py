@@ -299,16 +299,30 @@ def generate_report(
     sample_cols = [c for c in matrix.columns if c not in meta_cols]
     viz_matrix = matrix.set_index("taxon")[sample_cols] if "taxon" in matrix.columns else matrix[sample_cols]
 
-    barplot_path = plot_barplot(viz_matrix, figures_dir / "composition_barplot.png")
+    barplot_path = None
+    heatmap_path = None
+    alpha_fig_path = None
+    pcoa_fig_path = None
 
-    # Figure: Heatmap
-    heatmap_path = plot_heatmap(viz_matrix, figures_dir / "taxonomic_heatmap.png")
+    try:
+        barplot_path = plot_barplot(viz_matrix, figures_dir / "composition_barplot.png")
+    except Exception as e:
+        logger.warning(f"Barplot generation failed: {e}")
 
-    # Figure: Alpha diversity boxplot
-    alpha_fig_path = plot_alpha_diversity(alpha, figures_dir / "alpha_diversity.png")
+    try:
+        heatmap_path = plot_heatmap(viz_matrix, figures_dir / "taxonomic_heatmap.png")
+    except Exception as e:
+        logger.warning(f"Heatmap generation failed: {e}")
 
-    # Figure: PCoA
-    pcoa_fig_path = _plot_pcoa_from_coords(pcoa, figures_dir / "pcoa_plot.png")
+    try:
+        alpha_fig_path = plot_alpha_diversity(alpha, figures_dir / "alpha_diversity.png")
+    except Exception as e:
+        logger.warning(f"Alpha diversity plot failed: {e}")
+
+    try:
+        pcoa_fig_path = _plot_pcoa_from_coords(pcoa, figures_dir / "pcoa_plot.png")
+    except Exception as e:
+        logger.warning(f"PCoA plot failed: {e}")
 
     # ------------------------------------------------------------------
     # Build report
@@ -366,7 +380,7 @@ def generate_report(
         host_table = qc_stats[["sample", "host_removed_reads"]].copy()
         builder.add_table(host_table, title="Table 3. Host Removal Results")
 
-    builder.add_figure(qc_fig_path, caption="Figure. Read count changes across QC stages", width_inches=6.0)
+    if qc_fig_path: builder.add_figure(qc_fig_path, caption="Figure. Read count changes across QC stages", width_inches=6.0)
 
     # ---- 3. 바이러스 탐지 결과 ----
     builder.add_heading("3. 바이러스 탐지 결과", level=1)
@@ -381,16 +395,16 @@ def generate_report(
         builder.add_table(det_summary, title="Table 4. Detection Method Summary")
 
     builder.add_heading("3.2 탐지 방법 비교", level=2)
-    builder.add_figure(det_fig_path, caption="Figure 1. Virus detection by method", width_inches=6.0)
+    if det_fig_path: builder.add_figure(det_fig_path, caption="Figure 1. Virus detection by method", width_inches=6.0)
 
     # ---- 4. 분류학적 분석 ----
     builder.add_heading("4. 분류학적 분석", level=1)
 
     builder.add_heading("4.1 바이러스 구성 개요", level=2)
-    builder.add_figure(barplot_path, caption="Figure 2. Viral community composition (relative abundance)", width_inches=6.0)
+    if barplot_path: builder.add_figure(barplot_path, caption="Figure 2. Viral community composition (relative abundance)", width_inches=6.0)
 
     builder.add_heading("4.2 샘플별 상세 구성", level=2)
-    builder.add_figure(heatmap_path, caption="Figure 3. Taxonomic heatmap (log10 RPM+1)", width_inches=6.0)
+    if heatmap_path: builder.add_figure(heatmap_path, caption="Figure 3. Taxonomic heatmap (log10 RPM+1)", width_inches=6.0)
 
     builder.add_heading("4.3 주요 바이러스 목록", level=2)
     if "taxon" in matrix.columns:
@@ -413,13 +427,13 @@ def generate_report(
     builder.add_heading("5. 다양성 분석", level=1)
 
     builder.add_heading("5.1 Alpha diversity", level=2)
-    builder.add_figure(alpha_fig_path, caption="Figure 4. Alpha diversity boxplot", width_inches=6.0)
+    if alpha_fig_path: builder.add_figure(alpha_fig_path, caption="Figure 4. Alpha diversity boxplot", width_inches=6.0)
 
     # Alpha diversity table
     builder.add_table(alpha.copy(), title="Table 6. Alpha Diversity Metrics")
 
     builder.add_heading("5.2 Beta diversity", level=2)
-    builder.add_figure(pcoa_fig_path, caption="Figure 5. PCoA ordination (Bray-Curtis)", width_inches=6.0)
+    if pcoa_fig_path: builder.add_figure(pcoa_fig_path, caption="Figure 5. PCoA ordination (Bray-Curtis)", width_inches=6.0)
 
     # ---- 6. 결론 및 해석 ----
     builder.add_heading("6. 결론 및 해석", level=1)
