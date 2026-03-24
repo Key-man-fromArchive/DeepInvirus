@@ -9,15 +9,12 @@ process MULTIQC {
     path(multiqc_files)
 
     output:
-    path("multiqc_report.html"), emit: html
+    path("multiqc_report.html"), emit: html, optional: true
 
     script:
     """
-    multiqc . \\
-        -o . \\
-        -n multiqc_report.html \\
-        --force \\
-    || echo "<html><body><h1>MultiQC Report</h1><p>No QC data available.</p></body></html>" > multiqc_report.html
+    echo "<html><body><h1>MultiQC Report</h1><p>No QC data available.</p></body></html>" > multiqc_report.html
+    multiqc . -o . -n multiqc_report.html --force 2>/dev/null || true
     """
 
     stub:
