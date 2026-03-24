@@ -107,16 +107,31 @@ class ResourceScreen(Screen):
         return ResourceManager(config_path)
 
     def _refresh_system_info(self) -> None:
-        """Update the system/max info display."""
+        """Update the system/max info display, including RAM disk status."""
         mgr = self._get_manager()
         if mgr is None:
             return
 
         sys_info = mgr.get_system_info()
-        info_label = self.query_one("#system-info", Static)
-        info_label.update(
+        info_text = (
             f"System: {sys_info['cpus']} cores / {sys_info['memory_gb']} GB RAM"
         )
+
+        # @TASK T-RAMDISK - Show RAM disk availability in resource screen
+        try:
+            from ramdisk_manager import RamdiskManager
+
+            rm = RamdiskManager()
+            if rm.is_available():
+                avail = rm.get_available_ram_gb()
+                info_text += f"\nRAM disk: /dev/shm (Available: {avail} GB)"
+            else:
+                info_text += "\nRAM disk: not available"
+        except ImportError:
+            pass
+
+        info_label = self.query_one("#system-info", Static)
+        info_label.update(info_text)
 
     def _refresh_table(self) -> None:
         """Reload process resource data into the table."""

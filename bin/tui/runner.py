@@ -1,4 +1,4 @@
-# @TASK T8.2 - NextflowRunner 구현
+# @TASK T8.2, T-RAMDISK - NextflowRunner 구현 (RAM disk support)
 # @SPEC docs/planning/06-tasks-tui.md#phase-8-t82-실시간-진행-표시-redgreen
 # @TEST tests/tui/test_runner.py
 """
@@ -9,6 +9,7 @@ Manages the lifecycle of a Nextflow pipeline execution:
   - Launching the process asynchronously via asyncio
   - Parsing stdout/stderr for progress updates
   - Cancelling a running process
+  - RAM disk work directory support (use_ramdisk / work_dir params)
 
 Key log patterns matched by parse_progress():
   - Process step:  "[ab/cd1234] process > STEP_NAME (sample)"
@@ -21,6 +22,8 @@ import asyncio
 import re
 import time
 from pathlib import Path
+
+from ramdisk_manager import RamdiskManager
 
 # ---------------------------------------------------------------------------
 # Regex patterns for Nextflow log parsing
@@ -66,6 +69,8 @@ class NextflowRunner:
         self.steps_total: int = 0
         self.start_time: float = 0
         self._log_lines: list[str] = []
+        self._use_ramdisk: bool = False
+        self._ramdisk_manager: RamdiskManager | None = None
 
     # ------------------------------------------------------------------
     # Command building
@@ -111,6 +116,16 @@ class NextflowRunner:
         threads = params.get("threads")
         if threads:
             cmd.extend(["-process.cpus", str(threads)])
+
+        # @TASK T-RAMDISK - RAM disk or custom work directory
+        if params.get("use_ramdisk"):
+            ramdisk = RamdiskManager()
+            nf_work = ramdisk.create()
+            cmd.extend(["-w", str(nf_work)])
+            self._use_ramdisk = True
+            self._ramdisk_manager = ramdisk
+        elif params.get("work_dir"):
+            cmd.extend(["-w", str(params["work_dir"])])
 
         # Resume from last cached step
         if resume:
@@ -170,14 +185,21 @@ class NextflowRunner:
     def _get_work_dir(self, params: dict) -> Path:
         """Return the Nextflow work/ directory path for a given run.
 
-        The work directory is ``<project_root>/work`` by default.
+        Priority:
+          1. use_ramdisk → /dev/shm/deepinvirus_work
+          2. work_dir param → custom path
+          3. default → <project_root>/work
 
         Args:
-            params: Pipeline parameters dict (reserved for future use).
+            params: Pipeline parameters dict.
 
         Returns:
             Path to the Nextflow work directory.
         """
+        if params.get("use_ramdisk"):
+            return RamdiskManager.DEFAULT_MOUNT
+        if params.get("work_dir"):
+            return Path(params["work_dir"])
         return self.work_dir / "work"
 
     async def start(self, params: dict, resume: bool = False) -> None:
@@ -243,6 +265,11 @@ class NextflowRunner:
         await self.process.wait()
         self.is_running = False
 
+        # @TASK T-RAMDISK - Cleanup RAM disk after pipeline completion
+        if self._use_ramdisk and self._ramdisk_manager is not None:
+            self._ramdisk_manager.cleanup()
+            self._use_ramdisk = False
+
     async def cancel(self) -> None:
         """Terminate the running Nextflow process.
 
@@ -263,6 +290,10 @@ class NextflowRunner:
             pass
         finally:
             self.is_running = False
+            # @TASK T-RAMDISK - Cleanup RAM disk on cancel
+            if self._use_ramdisk and self._ramdisk_manager is not None:
+                self._ramdisk_manager.cleanup()
+                self._use_ramdisk = False
 
     # ------------------------------------------------------------------
     # Elapsed time

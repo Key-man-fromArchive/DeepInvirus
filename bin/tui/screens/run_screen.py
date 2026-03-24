@@ -52,6 +52,7 @@ from textual.widgets import (
     Static,
 )
 
+from ramdisk_manager import RamdiskManager
 from tui.runner import NextflowRunner
 from tui.screens.result_screen import ResultScreen, format_duration
 from tui.widgets.log_viewer import LogViewer
@@ -211,6 +212,17 @@ class RunScreen(Screen):
                     classes="form-field",
                 )
 
+                # ---- RAM disk (T-RAMDISK) ------------------------------
+                # @TASK T-RAMDISK - RAM disk checkbox for I/O speedup
+                yield Label("Work directory", classes="form-label")
+                yield Checkbox(
+                    "Use RAM disk (recommended for NFS data)",
+                    value=False,
+                    id="checkbox-ramdisk",
+                    classes="form-field",
+                )
+                yield Static("", id="ramdisk-info", classes="form-hint")
+
                 # ---- Output directory ----------------------------------
                 yield Label("Output directory", classes="form-label")
                 yield Input(
@@ -243,6 +255,30 @@ class RunScreen(Screen):
                         id="btn-start",
                         classes="primary",
                     )
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def on_mount(self) -> None:
+        """Update RAM disk info label on screen mount."""
+        self._update_ramdisk_info()
+
+    def _update_ramdisk_info(self) -> None:
+        """Refresh the RAM disk availability/status label."""
+        try:
+            info_label = self.query_one("#ramdisk-info", Static)
+            mgr = RamdiskManager()
+            if mgr.is_available():
+                avail = mgr.get_available_ram_gb()
+                rec = mgr.get_recommended_size_gb()
+                info_label.update(
+                    f"Available: {avail} GB / Recommended: {rec} GB"
+                )
+            else:
+                info_label.update("/dev/shm not available on this system")
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Public API
@@ -306,6 +342,13 @@ class RunScreen(Screen):
         except (ValueError, TypeError):
             threads_val = os.cpu_count() or 1
 
+        # @TASK T-RAMDISK - Read RAM disk checkbox state
+        use_ramdisk = False
+        try:
+            use_ramdisk = self.query_one("#checkbox-ramdisk", Checkbox).value
+        except Exception:
+            pass
+
         return {
             "reads": reads_val,
             "host": host_val,
@@ -314,6 +357,7 @@ class RunScreen(Screen):
             "skip_ml": not ml_val,   # Nextflow param: skip_ml=false means ML ON
             "outdir": outdir_val,
             "threads": threads_val,
+            "use_ramdisk": use_ramdisk,
         }
 
     def validate_params(self) -> list[str]:

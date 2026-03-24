@@ -90,11 +90,34 @@ def cli(ctx):
 @click.option("--threads", default=None, type=int, help="Number of threads (default: all available).")
 @click.option("--db-dir", default=None, type=click.Path(), help="Path to reference databases.")
 @click.option("--resume", is_flag=True, default=False, help="Resume a previous run with -resume.")
-def run(reads, host, outdir, assembler, search, skip_ml, threads, db_dir, resume):
+@click.option(
+    "--use-ramdisk",
+    is_flag=True,
+    default=False,
+    help="Use RAM disk (/dev/shm) for Nextflow work directory. Recommended for NFS data.",
+)
+@click.option(
+    "--ramdisk-size",
+    default=0,
+    type=int,
+    help="RAM disk size in GB (0=auto, recommended: 50-300).",
+)
+@click.option(
+    "--work-dir",
+    default=None,
+    type=click.Path(),
+    help="Custom Nextflow work directory path.",
+)
+def run(reads, host, outdir, assembler, search, skip_ml, threads, db_dir, resume, use_ramdisk, ramdisk_size, work_dir):
     """Run the DeepInvirus analysis pipeline.
 
     Launches the Nextflow pipeline (main.nf) with the specified parameters.
+    Use --use-ramdisk for massive I/O speedup when data is on NFS.
     """
+    from ramdisk_manager import RamdiskManager
+
+    ramdisk = None
+
     # Build Nextflow command
     cmd = ["nextflow", "run", str(_BIN_DIR.parent / "main.nf")]
     cmd += ["--reads", reads]
@@ -109,14 +132,38 @@ def run(reads, host, outdir, assembler, search, skip_ml, threads, db_dir, resume
         cmd += ["--threads", str(threads)]
     if db_dir is not None:
         cmd += ["--db_dir", db_dir]
+
+    # @TASK T-RAMDISK - RAM disk or custom work directory
+    if use_ramdisk:
+        size = ramdisk_size if ramdisk_size > 0 else None
+        ramdisk = RamdiskManager(size_gb=size or 200)
+        if not ramdisk.is_available():
+            click.echo("Error: /dev/shm is not available on this system.", err=True)
+            sys.exit(1)
+        click.echo(f"RAM disk: {ramdisk.size_gb} GB (available: {ramdisk.get_available_ram_gb()} GB)")
+        nf_work = ramdisk.create()
+        ramdisk.register_cleanup()
+        cmd += ["-w", str(nf_work)]
+        avail = ramdisk.get_available_ram_gb()
+        click.echo(f"RAM disk enabled: {nf_work} (available: {avail} GB)")
+    elif work_dir:
+        cmd += ["-w", work_dir]
+
     if resume:
         cmd += ["-resume"]
 
     click.echo(f"Running: {' '.join(cmd)}")
     try:
         result = subprocess.run(cmd, check=False)
+        # Cleanup RAM disk after pipeline finishes
+        if ramdisk is not None:
+            click.echo("Cleaning up RAM disk...")
+            ramdisk.cleanup()
         sys.exit(result.returncode)
     except FileNotFoundError:
+        # Cleanup RAM disk on error
+        if ramdisk is not None:
+            ramdisk.cleanup()
         click.echo(
             "Error: 'nextflow' not found. Please install Nextflow first.\n"
             "See: https://www.nextflow.io/docs/latest/getstarted.html",

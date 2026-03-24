@@ -137,6 +137,12 @@ if (params.host != 'none') {
 // -----------------------------------------------------------------------
 // Log pipeline info
 // -----------------------------------------------------------------------
+// @TASK T-RAMDISK - Log RAM disk status if enabled
+if (params.use_ramdisk) {
+    log.info "RAM disk enabled: work directory → ${params.ramdisk_path}"
+    log.info "  (pass -w ${params.ramdisk_path} via CLI runner for actual effect)"
+}
+
 log.info """
 =========================================================
  DeepInvirus v0.1.0
@@ -149,6 +155,8 @@ log.info """
  skip_ml    : ${params.skip_ml}
  db_dir     : ${params.db_dir ?: 'auto-download'}
  outdir     : ${params.outdir}
+ use_ramdisk: ${params.use_ramdisk}
+ work_dir   : ${params.work_dir ?: 'default (./work)'}
 =========================================================
 """.stripIndent()
 
@@ -259,6 +267,12 @@ workflow.onComplete {
         log.info "  - Report    : ${params.outdir}/report.docx"
         log.info "  - MultiQC   : ${params.outdir}/qc/multiqc_report.html"
         log.info "  - Bigtable  : ${params.outdir}/taxonomy/bigtable.tsv"
+    }
+
+    // @TASK T-RAMDISK - Reminder about RAM disk cleanup
+    if (params.use_ramdisk) {
+        log.info "Note: RAM disk cleanup is handled by the CLI runner (ramdisk_manager.py)."
+        log.info "  If running Nextflow directly, clean up manually: rm -rf ${params.ramdisk_path}"
     }
 }
 
