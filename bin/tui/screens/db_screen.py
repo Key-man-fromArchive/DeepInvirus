@@ -1,33 +1,36 @@
-# @TASK T9.1 + T9.2 - DB 관리 화면 (상태 표시 + 액션)
+# @TASK T9.1 + T9.2 + T-DB-INDEX - DB 관리 화면 (상태 + 인덱싱 + 액션)
 # @SPEC docs/planning/06-tasks-tui.md#phase-9-t91-db-상태-화면-redgreen
 # @SPEC docs/planning/06-tasks-tui.md#phase-9-t92-db-업데이트-액션-redgreen
 # @TEST tests/tui/test_db_screen.py
+# @TEST tests/test_db_indexer.py
 """
 Database Management screen for DeepInvirus TUI.
 
 Layout (ASCII):
-  +-- Database Management --------------------------------+
-  |                                                       |
-  |  DB Directory: /path/to/databases                     |
-  |                                                       |
-  |  +---------------------------------------------------+|
-  |  | Component         Version     Updated   Status    ||
-  |  |---------------------------------------------------||
-  |  | viral_protein     2026_01     2026-03-23   OK     ||
-  |  | viral_nucleotide  release_224 2026-03-23   OK     ||
-  |  | genomad_db        1.7         2026-03-23   OK     ||
-  |  | taxonomy          2026-03-20  2026-03-23   OK     ||
-  |  +---------------------------------------------------+|
-  |                                                       |
-  |  Total size: 53.2 GB                                  |
-  |                                                       |
-  |  [Install All] [Update Selected] [Back]               |
-  |                                                       |
-  |  [ProgressWidget - hidden until install starts]       |
-  +-------------------------------------------------------+
+  +-- Database Management ----------------------------------------+
+  |                                                               |
+  |  DB Directory: /path/to/databases                             |
+  |  Total size: 8.2 GB                                           |
+  |                                                               |
+  |  +-----------------------------------------------------------+|
+  |  | Component        Tool      Index  Version  Updated Status ||
+  |  |-----------------------------------------------------------||
+  |  | Viral Protein    Diamond   OK     2026_01  03-23   OK     ||
+  |  | Viral Nucleotide MMseqs2   OK     rel_224  03-23   OK     ||
+  |  | geNomad DB       Built-in  OK     1.7      03-23   OK     ||
+  |  | NCBI Taxonomy    N/A       OK     03-20    03-23   OK     ||
+  |  | Host: tmol       minimap2  OK     -        03-23   OK     ||
+  |  | Host: zmor       minimap2  OK     -        03-23   OK     ||
+  |  +-----------------------------------------------------------+|
+  |                                                               |
+  |  [Install All] [Update] [Rebuild Index] [Rebuild All] [Back] |
+  |                                                               |
+  |  [ProgressWidget - hidden until install starts]               |
+  +---------------------------------------------------------------+
 
 T9.1: VERSION.json -> DataTable, disk usage, installed/missing status
 T9.2: [Install All] -> subprocess install_databases.py, progress, reload
+T-DB-INDEX: Index status display + rebuild actions via DBIndexer
 """
 
 from __future__ import annotations
@@ -44,6 +47,7 @@ from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import Button, DataTable, Static
 
+from db_indexer import DBIndexer
 from tui.widgets.progress import ProgressWidget
 
 # ---------------------------------------------------------------------------
@@ -171,6 +175,16 @@ class DbScreen(Screen):
             yield Button(
                 "Update Selected",
                 id="update-selected",
+                classes="secondary",
+            )
+            yield Button(
+                "Rebuild Index",
+                id="rebuild-index",
+                classes="secondary",
+            )
+            yield Button(
+                "Rebuild All",
+                id="rebuild-all",
                 classes="secondary",
             )
             yield Button(
@@ -405,42 +419,190 @@ class DbScreen(Screen):
             await self.run_install(components="all")
         elif button_id == "update-selected":
             await self.run_update_selected()
+        elif button_id == "rebuild-index":
+            await self.run_rebuild_index()
+        elif button_id == "rebuild-all":
+            await self.run_rebuild_all()
         elif button_id == "back":
             self.app.pop_screen()
+
+    # ------------------------------------------------------------------
+    # T-DB-INDEX: Rebuild index actions
+    # ------------------------------------------------------------------
+
+    # @TASK T-DB-INDEX - 인덱스 재빌드 액션
+    # @SPEC docs/planning/04-database-design.md
+
+    async def run_rebuild_index(self) -> None:
+        """Rebuild the index for the component selected in the DataTable.
+
+        Reads the cursor row, maps the display name back to a component key,
+        and runs the rebuild command via an async subprocess.
+        """
+        try:
+            table = self.query_one("#db-table", DataTable)
+            row_key = table.cursor_row
+            if row_key is None:
+                self.notify(
+                    "No component selected.",
+                    title="Warning",
+                    severity="warning",
+                )
+                return
+
+            row_data = table.get_row_at(row_key)
+            component_name = str(row_data[0]).strip()
+
+            # Map display name back to component key
+            comp_key = self._display_to_component_key(component_name)
+            if comp_key is None:
+                self.notify(
+                    f"Unknown component: {component_name}",
+                    title="Warning",
+                    severity="warning",
+                )
+                return
+
+            indexer = DBIndexer(self.db_dir)
+            cmd_str = indexer.rebuild_index(comp_key)
+            if not cmd_str:
+                self.notify(
+                    f"No rebuild available for {component_name}",
+                    title="Info",
+                )
+                return
+
+            await self._run_shell_command(cmd_str, label=f"Rebuilding {component_name}")
+
+        except Exception as exc:
+            self.notify(str(exc), title="Error", severity="error")
+
+    async def run_rebuild_all(self) -> None:
+        """Rebuild indices for all components that are missing them."""
+        try:
+            indexer = DBIndexer(self.db_dir)
+            commands = indexer.rebuild_all()
+            if not commands:
+                self.notify(
+                    "All indices are up to date.",
+                    title="Info",
+                )
+                return
+
+            for i, cmd_str in enumerate(commands, 1):
+                await self._run_shell_command(
+                    cmd_str,
+                    label=f"Rebuild ({i}/{len(commands)})",
+                )
+
+        except Exception as exc:
+            self.notify(str(exc), title="Error", severity="error")
+
+    async def _run_shell_command(self, cmd_str: str, label: str = "") -> None:
+        """Execute a shell command asynchronously with progress display.
+
+        Args:
+            cmd_str: Shell command string to execute.
+            label: Human-readable label for progress display.
+        """
+        progress = self.query_one("#db-progress", ProgressWidget)
+        progress.update(current=0, total=1, step_name=label or cmd_str[:80])
+
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                cmd_str,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode == 0:
+                progress.update(current=1, total=1, step_name=f"{label} complete")
+                self.notify(f"{label} completed.", title="Success")
+            else:
+                error_msg = stderr.decode().strip() if stderr else "Unknown error"
+                progress.update(
+                    current=0, total=1,
+                    step_name=f"{label} failed: {error_msg[:80]}",
+                )
+                self.notify(
+                    f"{label} failed (exit {proc.returncode})",
+                    title="Error",
+                    severity="error",
+                )
+        except Exception as exc:
+            progress.update(current=0, total=1, step_name=f"Error: {exc}")
+            self.notify(str(exc), title="Error", severity="error")
+        finally:
+            self.reload_db_info()
+
+    @staticmethod
+    def _display_to_component_key(display_name: str) -> str | None:
+        """Map a DataTable display name back to a component key.
+
+        Args:
+            display_name: Human-readable label from the table row.
+
+        Returns:
+            Component key string, or None if unrecognized.
+        """
+        reverse_map = {v: k for k, v in COMPONENT_LABELS.items()}
+        if display_name in reverse_map:
+            return reverse_map[display_name]
+        if display_name.startswith("Host:"):
+            host_name = display_name.split(":")[1].strip()
+            return f"host:{host_name}"
+        return None
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     def _setup_table(self) -> None:
-        """Configure the DataTable columns."""
+        """Configure the DataTable columns (includes Tool and Index)."""
         try:
             table = self.query_one("#db-table", DataTable)
-            table.add_columns("Component", "Version", "Updated", "Status")
+            table.add_columns(
+                "Component", "Tool", "Index", "Version", "Updated", "Status",
+            )
         except Exception:
             pass
 
     def _populate_table(self) -> None:
-        """Fill the DataTable with current DB info."""
+        """Fill the DataTable with current DB info (includes Tool/Index)."""
         try:
             table = self.query_one("#db-table", DataTable)
             table.clear()
+
+            # Build index status lookup from DBIndexer
+            indexer = DBIndexer(self.db_dir)
+            index_status = indexer.get_index_status()
+            index_map: dict[str, dict] = {
+                e["component"]: e for e in index_status
+            }
 
             info = self.load_db_info()
 
             if info:
                 for entry in info:
-                    label = COMPONENT_LABELS.get(
-                        entry["component"], entry["component"]
-                    )
+                    comp_key = entry["component"]
+                    label = COMPONENT_LABELS.get(comp_key, comp_key)
                     # Host genome entries
-                    if entry["component"].startswith("host:"):
-                        host_name = entry["component"].split(":")[1]
+                    if comp_key.startswith("host:"):
+                        host_name = comp_key.split(":")[1]
                         label = f"Host: {host_name}"
+
+                    # Fetch tool/index info from DBIndexer
+                    idx_info = index_map.get(comp_key, {})
+                    tool = idx_info.get("tool", "-")
+                    indexed = idx_info.get("indexed", False)
+                    index_str = "OK" if indexed else "Missing"
 
                     status = "OK" if entry["installed"] else "Missing"
                     table.add_row(
                         label,
+                        tool,
+                        index_str,
                         entry["version"],
                         entry["updated"],
                         status,
@@ -451,12 +613,22 @@ class DbScreen(Screen):
                 for comp_key in KNOWN_COMPONENTS:
                     if comp_key not in installed_keys:
                         label = COMPONENT_LABELS.get(comp_key, comp_key)
-                        table.add_row(label, "-", "-", "Not installed")
+                        idx_info = index_map.get(comp_key, {})
+                        tool = idx_info.get("tool", "-")
+                        table.add_row(
+                            label, tool, "-", "-", "-", "Not installed",
+                        )
             else:
                 # No VERSION.json - show all as not installed
                 for comp_key in KNOWN_COMPONENTS:
                     label = COMPONENT_LABELS.get(comp_key, comp_key)
-                    table.add_row(label, "-", "-", "Not installed")
+                    idx_info = index_map.get(comp_key, {})
+                    tool = idx_info.get("tool", "-")
+                    indexed = idx_info.get("indexed", False)
+                    index_str = "OK" if indexed else "-"
+                    table.add_row(
+                        label, tool, index_str, "-", "-", "Not installed",
+                    )
         except Exception:
             pass
 
