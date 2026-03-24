@@ -17,6 +17,8 @@ workflow REPORTING {
     ch_qc_stats          // path(qc_stats.tsv) -- aggregated QC statistics
     ch_assembly_stats    // path(assembly_stats.tsv)
     ch_fastp_json        // tuple val(meta), path(json) - for MultiQC
+    ch_fastqc_raw        // tuple val(meta), path(zip) - raw FastQC for MultiQC
+    ch_fastqc_trimmed    // tuple val(meta), path(zip) - trimmed FastQC for MultiQC
 
     main:
     // Step 1: Interactive HTML dashboard
@@ -40,8 +42,18 @@ workflow REPORTING {
         ch_assembly_stats
     )
 
-    // Step 3: MultiQC aggregate QC report from fastp JSONs
-    ch_multiqc_files = ch_fastp_json.map{ meta, f -> f }.collect()
+    // Step 3: MultiQC aggregate QC report from fastp JSONs + FastQC zips
+    ch_fastqc_files = ch_fastqc_raw
+        .mix( ch_fastqc_trimmed )
+        .map{ meta, f -> f }
+        .collect()
+        .ifEmpty( [] )
+    ch_multiqc_files = ch_fastp_json
+        .map{ meta, f -> f }
+        .collect()
+        .ifEmpty( [] )
+        .mix( ch_fastqc_files )
+        .collect()
     MULTIQC( ch_multiqc_files )
 
     emit:

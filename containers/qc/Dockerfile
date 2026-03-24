@@ -19,6 +19,7 @@ RUN mamba install -y -n base \
         -c bioconda -c conda-forge \
         fastp>=0.23 \
         bbmap>=39.0 \
+        fastqc>=0.12 \
         minimap2>=2.26 \
         samtools>=1.18 \
     && mamba clean -afy \
