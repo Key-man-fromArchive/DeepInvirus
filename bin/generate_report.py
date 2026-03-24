@@ -222,6 +222,7 @@ def generate_report(
     assembly_stats_path: Path,
     output_path: Path,
     figures_dir: Path | None = None,
+    host_stats_path: Path | None = None,
 ) -> Path:
     """Build the Word report and save to *output_path*.
 
@@ -235,6 +236,10 @@ def generate_report(
         output_path: Destination .docx file.
         figures_dir: Optional directory to persist figure PNGs.
             Defaults to a temp directory (cleaned on exit).
+        host_stats_path: Optional path to host_removal_stats.tsv
+            (output of parse_host_removal.py). If provided, an
+            enhanced host removal section with chart and table
+            is added to the report.
 
     Returns:
         The resolved output path.
@@ -272,6 +277,16 @@ def generate_report(
             assembly_stats = pd.DataFrame()
     except Exception:
         assembly_stats = pd.DataFrame()
+
+    # Load host removal stats (graceful skip if missing)
+    # @TASK T1.2 - Host removal statistics for report
+    host_stats = pd.DataFrame()
+    try:
+        if host_stats_path and Path(host_stats_path).exists():
+            host_stats = pd.read_csv(host_stats_path, sep="\t")
+            logger.info("Loaded host removal stats: %d samples", len(host_stats))
+    except Exception as exc:
+        logger.warning("Could not load host removal stats: %s", exc)
 
     # ------------------------------------------------------------------
     # Prepare figures directory
@@ -376,11 +391,67 @@ def generate_report(
         builder.add_table(qc_stats[trim_cols].copy(), title="Table 2. Trimming Results")
 
     builder.add_heading("2.3 Host removal 결과", level=2)
-    if "host_removed_reads" in qc_stats.columns:
+
+    # Enhanced host removal section with mapping statistics
+    # @TASK T1.2 - Host removal mapping statistics in report
+    host_fig_path = None
+    if not host_stats.empty:
+        # Build host removal statistics table
+        host_display_cols = []
+        for col in ["sample", "total_reads", "mapped_reads", "unmapped_reads", "host_removal_rate"]:
+            if col in host_stats.columns:
+                host_display_cols.append(col)
+        if host_display_cols:
+            ht = host_stats[host_display_cols].copy()
+            # Rename columns for display
+            col_rename = {
+                "total_reads": "Total Reads",
+                "mapped_reads": "Host Mapped",
+                "unmapped_reads": "Non-host",
+                "host_removal_rate": "Host %",
+            }
+            ht = ht.rename(columns=col_rename)
+            builder.add_table(ht, title="Table 3. Host Removal Mapping Statistics")
+
+        # Generate host mapping rate bar chart
+        try:
+            from visualize_host_removal import parse_flagstat, plot_mapping_rate_bar
+            viz_stats = []
+            for _, row in host_stats.iterrows():
+                total = int(row.get("total_reads", 0))
+                mapped = int(row.get("mapped_reads", 0))
+                unmapped = int(row.get("unmapped_reads", 0))
+                rate = float(row.get("host_removal_rate", 0))
+                viz_stats.append({
+                    "sample": str(row.get("sample", "")),
+                    "total": total,
+                    "mapped": mapped,
+                    "mapped_pct": rate,
+                    "unmapped": unmapped,
+                    "unmapped_pct": 100.0 - rate if total > 0 else 0.0,
+                })
+            if viz_stats:
+                host_fig_path = figures_dir / "host_mapping_rate.png"
+                plot_mapping_rate_bar(viz_stats, host_fig_path)
+        except Exception as exc:
+            logger.warning("Host mapping rate chart failed: %s", exc)
+
+        # Interpretation text
+        builder.add_paragraph(
+            "Host mapping rate는 각 샘플에서 host (숙주) 유래 RNA의 비율을 나타냅니다. "
+            "매핑률이 낮은 샘플은 host RNA가 적고 viral/environmental RNA 비율이 "
+            "높음을 시사합니다. 이는 샘플의 상태(세포 생존 여부, RNA 분해 정도)와 "
+            "직접적으로 연관됩니다."
+        )
+    elif "host_removed_reads" in qc_stats.columns:
+        # Fallback: basic host removal info from QC stats
         host_table = qc_stats[["sample", "host_removed_reads"]].copy()
         builder.add_table(host_table, title="Table 3. Host Removal Results")
 
-    if qc_fig_path: builder.add_figure(qc_fig_path, caption="Figure. Read count changes across QC stages", width_inches=6.0)
+    if host_fig_path:
+        builder.add_figure(host_fig_path, caption="Figure. Host mapping rate by sample (grey=host, blue=non-host)", width_inches=6.0)
+    if qc_fig_path:
+        builder.add_figure(qc_fig_path, caption="Figure. Read count changes across QC stages", width_inches=6.0)
 
     # ---- 3. 바이러스 탐지 결과 ----
     builder.add_heading("3. 바이러스 탐지 결과", level=1)
@@ -563,6 +634,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--figures-dir", type=Path, default=None,
         help="Directory to save figure PNGs (default: temp dir)",
     )
+    parser.add_argument(
+        "--host-stats", type=Path, default=None,
+        help="Path to host_removal_stats.tsv (from parse_host_removal.py)",
+    )
     return parser.parse_args(argv)
 
 
@@ -585,6 +660,7 @@ def main(argv: list[str] | None = None) -> None:
         assembly_stats_path=asm_path,
         output_path=args.output,
         figures_dir=args.figures_dir,
+        host_stats_path=args.host_stats,
     )
 
 

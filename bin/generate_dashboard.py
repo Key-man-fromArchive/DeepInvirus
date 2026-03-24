@@ -134,6 +134,54 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def build_host_removal_data(host_stats: pd.DataFrame) -> dict[str, Any]:
+    """Build host removal statistics data for the dashboard.
+
+    # @TASK T1.2 - Host removal statistics in dashboard
+
+    Returns a dict with keys:
+        samples: list of sample names
+        mapped_reads: list of host-mapped read counts
+        unmapped_reads: list of non-host read counts
+        host_pct: list of host mapping percentages
+        total_reads: list of total read counts
+    """
+    if host_stats.empty:
+        return {
+            "samples": [],
+            "mapped_reads": [],
+            "unmapped_reads": [],
+            "host_pct": [],
+            "total_reads": [],
+        }
+
+    samples = host_stats["sample"].tolist() if "sample" in host_stats.columns else []
+    mapped = (
+        host_stats["mapped_reads"].astype(int).tolist()
+        if "mapped_reads" in host_stats.columns else []
+    )
+    unmapped = (
+        host_stats["unmapped_reads"].astype(int).tolist()
+        if "unmapped_reads" in host_stats.columns else []
+    )
+    host_pct = (
+        [_safe_float(v) for v in host_stats["host_removal_rate"].tolist()]
+        if "host_removal_rate" in host_stats.columns else []
+    )
+    total = (
+        host_stats["total_reads"].astype(int).tolist()
+        if "total_reads" in host_stats.columns else []
+    )
+
+    return {
+        "samples": samples,
+        "mapped_reads": mapped,
+        "unmapped_reads": unmapped,
+        "host_pct": host_pct,
+        "total_reads": total,
+    }
+
+
 def build_summary(bigtable: pd.DataFrame, matrix: pd.DataFrame) -> dict[str, Any]:
     """Compute overview summary card values.
 
@@ -476,9 +524,17 @@ def build_dashboard_data(
     alpha: pd.DataFrame,
     beta: pd.DataFrame,
     pcoa: pd.DataFrame,
+    host_stats: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
-    """Assemble the full data dict injected as ``window.__DASHBOARD_DATA__``."""
-    return {
+    """Assemble the full data dict injected as ``window.__DASHBOARD_DATA__``.
+
+    Parameters
+    ----------
+    host_stats:
+        Optional host removal stats DataFrame (from parse_host_removal.py).
+        If provided, host removal data is included in the dashboard.
+    """
+    data = {
         "summary": build_summary(bigtable, matrix),
         "sankey": build_sankey(bigtable),
         "heatmap": build_heatmap(matrix),
@@ -488,6 +544,12 @@ def build_dashboard_data(
         "search_rows": build_search_rows(bigtable),
         "samples": list(bigtable["sample"].dropna().unique()) if not bigtable.empty and "sample" in bigtable.columns else [],
     }
+    # @TASK T1.2 - Host removal statistics in dashboard
+    if host_stats is not None:
+        data["host_removal"] = build_host_removal_data(host_stats)
+    else:
+        data["host_removal"] = build_host_removal_data(pd.DataFrame())
+    return data
 
 
 def render_dashboard(
@@ -591,6 +653,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Output path for the standalone dashboard.html",
     )
     parser.add_argument(
+        "--host-stats",
+        metavar="TSV",
+        default=None,
+        help="Path to host_removal_stats.tsv (from parse_host_removal.py)",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
@@ -620,7 +688,17 @@ def main(argv: list[str] | None = None) -> int:
         beta = load_beta(Path(args.beta))
         pcoa = load_pcoa(Path(args.pcoa))
 
-        data = build_dashboard_data(bigtable, matrix, alpha, beta, pcoa)
+        # Load host removal stats if provided
+        host_stats = None
+        if args.host_stats:
+            host_path = Path(args.host_stats)
+            if host_path.exists():
+                host_stats = pd.read_csv(host_path, sep="\t")
+                logger.info("Loaded host removal stats: %d samples", len(host_stats))
+            else:
+                logger.warning("Host stats file not found: %s", host_path)
+
+        data = build_dashboard_data(bigtable, matrix, alpha, beta, pcoa, host_stats)
         render_dashboard(data, Path(args.output))
     except Exception:
         logger.exception("Dashboard generation failed")
