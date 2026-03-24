@@ -15,6 +15,7 @@ Keyboard shortcuts:
     h        -> HostScreen (Host Genome)
     c        -> ConfigScreen (Config Presets)
     i        -> HistoryScreen (History)
+    p        -> ResourceScreen (Process Resources)
     q        -> Quit
     escape   -> Pop current screen (or quit if on MainScreen)
 """
@@ -28,6 +29,7 @@ from tui.screens.db_screen import DbScreen
 from tui.screens.history_screen import HistoryScreen
 from tui.screens.host_screen import HostScreen
 from tui.screens.main_screen import MainScreen
+from tui.screens.resource_screen import ResourceScreen
 from tui.screens.run_screen import RunScreen
 
 
@@ -57,6 +59,7 @@ class DeepInVirusApp(App):
         "host": HostScreen,
         "config": ConfigScreen,
         "history": HistoryScreen,
+        "resource": ResourceScreen,
     }
 
     BINDINGS = [
@@ -65,6 +68,7 @@ class DeepInVirusApp(App):
         ("h", "host", "Host Genome"),
         ("c", "config", "Config"),
         ("i", "history", "History"),
+        ("p", "resource", "Process"),
         ("q", "quit", "Quit"),
         ("escape", "back", "Back"),
     ]
@@ -127,10 +131,14 @@ class DeepInVirusApp(App):
         """Push the History screen."""
         self.push_screen("history")
 
+    def action_resource(self) -> None:
+        """Push the Process Resources screen."""
+        self.push_screen("resource")
+
     def action_help(self) -> None:
         """Show a brief help notification (placeholder until Help screen)."""
         self.notify(
-            "Keyboard shortcuts: [r]Run  [d]DB  [h]Host  [c]Config  [i]History  [q]Quit",
+            "Keyboard shortcuts: [r]Run  [d]DB  [h]Host  [c]Config  [i]History  [p]Process  [q]Quit",
             title="Help",
             timeout=5,
         )

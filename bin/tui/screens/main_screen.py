@@ -52,6 +52,7 @@ class MainScreen(Screen):
         btn-host     -> HostScreen
         btn-config   -> ConfigScreen
         btn-history  -> HistoryScreen
+        btn-resource -> ResourceScreen
         btn-help     -> (placeholder message)
     """
 
@@ -87,6 +88,11 @@ class MainScreen(Screen):
                 classes="menu-button",
             )
             yield Button(
+                "Process Resources",
+                id="btn-resource",
+                classes="menu-button",
+            )
+            yield Button(
                 "Help",
                 id="btn-help",
                 classes="menu-button",
@@ -107,6 +113,7 @@ class MainScreen(Screen):
             "btn-host": "host",
             "btn-config": "config",
             "btn-history": "history",
+            "btn-resource": "resource",
             "btn-help": "help",
         }
         if button_id in action_map:
