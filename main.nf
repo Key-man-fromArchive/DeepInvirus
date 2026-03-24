@@ -223,10 +223,8 @@ workflow {
 
     // --- Step 5: REPORTING (DASHBOARD + REPORT + MULTIQC) ---
     // Collect per-sample stats into aggregated channels for reporting
-    ch_qc_stats = PREPROCESSING.out.fastp_json,
-        PREPROCESSING.out.fastqc_raw,
-        PREPROCESSING.out.fastqc_trimmed
-        .map { meta, json -> json }
+    ch_qc_stats = PREPROCESSING.out.trim_stats
+        .map { meta, stats -> stats }
         .collect()
 
     ch_assembly_stats = ASSEMBLY.out.stats
