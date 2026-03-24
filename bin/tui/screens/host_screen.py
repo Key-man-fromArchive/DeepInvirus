@@ -170,10 +170,10 @@ class HostScreen(Screen):
         # Add Host inline form (hidden by default)
         with Vertical(id="add-host-form"):
             with Horizontal(classes="form-row"):
-                yield Static("Nickname:", classes="form-label")
+                yield Static("Dbname:", classes="form-label")
                 yield Input(
                     placeholder="e.g. tmol (short identifier for --host)",
-                    id="input-host-nickname",
+                    id="input-host-dbname",
                     classes="form-field",
                 )
             with Horizontal(classes="form-row"):
@@ -212,7 +212,7 @@ class HostScreen(Screen):
     def _setup_table(self) -> None:
         """Add columns to the DataTable."""
         table = self.query_one("#host-table", DataTable)
-        table.add_columns("Nickname", "Species", "Index Status", "Size")
+        table.add_columns("Dbname", "Species", "Index Status", "Size")
 
     def _refresh_table(self) -> None:
         """Clear and re-populate the host genome table."""
@@ -226,9 +226,9 @@ class HostScreen(Screen):
         for host in hosts:
             index_icon = "YES" if host["indexed"] else "NO"
             size_str = _format_size(host["size"])
-            nickname = host.get("nickname", host["name"])
+            dbname = host.get("dbname", host["name"])
             species = host.get("species", "Unknown")
-            table.add_row(nickname, species, index_icon, size_str)
+            table.add_row(dbname, species, index_icon, size_str)
 
     # ------------------------------------------------------------------
     # list_hosts: directory scanner
@@ -239,7 +239,7 @@ class HostScreen(Screen):
 
         Each dict contains:
             - name (str): directory name (e.g. "human")
-            - nickname (str): short identifier from info.json (e.g. "tmol")
+            - dbname (str): short identifier from info.json (e.g. "tmol")
             - species (str): full species name from info.json
             - indexed (bool): True if any .mmi file exists
             - size (int): total file size in bytes
@@ -268,13 +268,13 @@ class HostScreen(Screen):
             if info_path.exists():
                 try:
                     info = json.loads(info_path.read_text())
-                    nickname = info.get("nickname", entry.name)
+                    dbname = info.get("dbname", entry.name)
                     species = info.get("species", "Unknown")
                 except (json.JSONDecodeError, OSError):
-                    nickname = entry.name
+                    dbname = entry.name
                     species = "Unknown"
             else:
-                nickname = entry.name
+                dbname = entry.name
                 species = "Unknown"
 
             # Check for .mmi index files
@@ -286,7 +286,7 @@ class HostScreen(Screen):
 
             hosts.append({
                 "name": entry.name,
-                "nickname": nickname,
+                "dbname": dbname,
                 "species": species,
                 "indexed": indexed,
                 "size": size,
@@ -330,18 +330,18 @@ class HostScreen(Screen):
         """Hide the Add Host inline form and clear inputs."""
         form = self.query_one("#add-host-form")
         form.remove_class("visible")
-        self.query_one("#input-host-nickname", Input).value = ""
+        self.query_one("#input-host-dbname", Input).value = ""
         self.query_one("#input-host-species", Input).value = ""
         self.query_one("#input-fasta-path", Input).value = ""
 
     def _execute_add_host(self) -> None:
         """Run bin/add_host.py as subprocess with form values."""
-        nickname = self.query_one("#input-host-nickname", Input).value.strip()
+        dbname = self.query_one("#input-host-dbname", Input).value.strip()
         species = self.query_one("#input-host-species", Input).value.strip()
         fasta_path = self.query_one("#input-fasta-path", Input).value.strip()
 
-        if not nickname:
-            self.notify("Nickname is required.", severity="error")
+        if not dbname:
+            self.notify("Dbname is required.", severity="error")
             return
         if not fasta_path:
             self.notify("FASTA path is required.", severity="error")
@@ -362,14 +362,14 @@ class HostScreen(Screen):
         cmd = [
             sys.executable,
             str(add_host_script),
-            "--name", nickname,
-            "--nickname", nickname,
+            "--name", dbname,
+            "--dbname", dbname,
             "--species", species or "Unknown",
             "--fasta", str(fasta),
             "--db-dir", str(self.db_dir),
         ]
 
-        self.notify(f"Adding host genome '{nickname}'...", severity="information")
+        self.notify(f"Adding host genome '{dbname}'...", severity="information")
 
         try:
             result = subprocess.run(

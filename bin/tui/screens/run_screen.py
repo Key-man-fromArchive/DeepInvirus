@@ -66,13 +66,13 @@ def _load_host_options(db_dir: Path | None = None) -> list[tuple[str, str]]:
     """Load available host genomes from the database directory.
 
     Scans databases/host_genomes/ for registered hosts and returns
-    a list of (display_label, nickname) tuples for use in checkboxes.
+    a list of (display_label, dbname) tuples for use in checkboxes.
 
     Args:
         db_dir: Root database directory. If None, uses 'databases'.
 
     Returns:
-        List of (label, nickname) tuples. Always includes "None" option.
+        List of (label, dbname) tuples. Always includes "None" option.
     """
     import json
 
@@ -87,9 +87,9 @@ def _load_host_options(db_dir: Path | None = None) -> list[tuple[str, str]]:
             if info_path.exists():
                 try:
                     info = json.loads(info_path.read_text())
-                    nickname = info.get("nickname", entry.name)
+                    dbname = info.get("dbname", entry.name)
                     species = info.get("species", "Unknown")
-                    options.append((f"{nickname} ({species})", nickname))
+                    options.append((f"{dbname} ({species})", dbname))
                 except (json.JSONDecodeError, OSError):
                     options.append((entry.name, entry.name))
             else:
@@ -182,11 +182,11 @@ class RunScreen(Screen):
                     classes="form-hint",
                 )
                 with Vertical(id="host-checkboxes", classes="form-field"):
-                    for label, nickname in host_options:
+                    for label, dbname in host_options:
                         yield Checkbox(
                             label,
                             value=False,
-                            id=f"host-cb-{nickname}",
+                            id=f"host-cb-{dbname}",
                             classes="host-checkbox",
                         )
 
@@ -269,15 +269,15 @@ class RunScreen(Screen):
         """
         reads_val = self.query_one("#input-reads", Input).value.strip()
 
-        # Collect selected host nicknames from checkboxes
+        # Collect selected host dbnames from checkboxes
         # @TASK T-MULTI-HOST - Read multi-host checkbox selections
         selected_hosts = []
         try:
             host_container = self.query_one("#host-checkboxes")
             for cb in host_container.query(Checkbox):
                 if cb.value and cb.id and cb.id.startswith("host-cb-"):
-                    nickname = cb.id.replace("host-cb-", "")
-                    selected_hosts.append(nickname)
+                    dbname = cb.id.replace("host-cb-", "")
+                    selected_hosts.append(dbname)
         except Exception:
             pass
 

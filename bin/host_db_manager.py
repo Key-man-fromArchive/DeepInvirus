@@ -5,8 +5,8 @@
 """
 Host Genome Database Manager for DeepInvirus.
 
-Manages individual host genome registrations with nicknames, supports
-selecting multiple hosts by comma-separated nicknames, and builds
+Manages individual host genome registrations with dbnames, supports
+selecting multiple hosts by comma-separated dbnames, and builds
 combined minimap2 indices for multi-host removal.
 
 DB structure:
@@ -14,7 +14,7 @@ DB structure:
         tmol/
             genome.fa.gz
             genome.mmi
-            info.json   # {"nickname": "tmol", "species": "Tenebrio molitor", "added": "..."}
+            info.json   # {"dbname": "tmol", "species": "Tenebrio molitor", "added": "..."}
         zmor/
             genome.fa.gz
             genome.mmi
@@ -48,14 +48,14 @@ logger = logging.getLogger("host_db_manager")
 
 
 def parse_host_string(host_str: str) -> list[str]:
-    """Parse a comma-separated host string into a deduplicated list of nicknames.
+    """Parse a comma-separated host string into a deduplicated list of dbnames.
 
     Args:
-        host_str: Comma-separated host nicknames (e.g., "tmol,zmor,human").
+        host_str: Comma-separated host dbnames (e.g., "tmol,zmor,human").
                   "none" or empty string returns an empty list.
 
     Returns:
-        Ordered, deduplicated list of host nicknames.
+        Ordered, deduplicated list of host dbnames.
 
     Examples:
         >>> parse_host_string("tmol,zmor")
@@ -88,7 +88,7 @@ def parse_host_string(host_str: str) -> list[str]:
 class HostDBManager:
     """Manages host genome databases for DeepInvirus.
 
-    Each host genome is stored under db_dir/host_genomes/{nickname}/
+    Each host genome is stored under db_dir/host_genomes/{dbname}/
     with genome.fa.gz, genome.mmi (optional), and info.json.
 
     Args:
@@ -104,10 +104,10 @@ class HostDBManager:
     # ------------------------------------------------------------------
 
     def _load_index(self) -> dict[str, str]:
-        """Load _index.json (nickname -> species mapping).
+        """Load _index.json (dbname -> species mapping).
 
         Returns:
-            Dictionary mapping nicknames to species names.
+            Dictionary mapping dbnames to species names.
         """
         index_path = self.host_dir / "_index.json"
         if index_path.exists():
@@ -118,7 +118,7 @@ class HostDBManager:
         """Persist _index.json to disk.
 
         Args:
-            data: nickname -> species mapping.
+            data: dbname -> species mapping.
         """
         self.host_dir.mkdir(parents=True, exist_ok=True)
         index_path = self.host_dir / "_index.json"
@@ -133,13 +133,13 @@ class HostDBManager:
 
         Returns:
             List of dicts, each containing:
-                - nickname (str): Host nickname
+                - dbname (str): Host dbname
                 - species (str): Species name
                 - indexed (bool): Whether .mmi index exists
                 - size_mb (float): Total directory size in MB
 
         Example:
-            [{"nickname": "tmol", "species": "Tenebrio molitor",
+            [{"dbname": "tmol", "species": "Tenebrio molitor",
               "indexed": True, "size_mb": 84.2}]
         """
         if not self.host_dir.is_dir():
@@ -157,10 +157,10 @@ class HostDBManager:
             info_path = entry / "info.json"
             if info_path.exists():
                 info = json.loads(info_path.read_text())
-                nickname = info.get("nickname", entry.name)
+                dbname = info.get("dbname", entry.name)
                 species = info.get("species", "Unknown")
             else:
-                nickname = entry.name
+                dbname = entry.name
                 species = "Unknown"
 
             # Check for .mmi index
@@ -174,7 +174,7 @@ class HostDBManager:
             size_mb = round(total_bytes / (1024 * 1024), 2)
 
             hosts.append({
-                "nickname": nickname,
+                "dbname": dbname,
                 "species": species,
                 "indexed": indexed,
                 "size_mb": size_mb,
@@ -188,7 +188,7 @@ class HostDBManager:
 
     def add_host(
         self,
-        nickname: str,
+        dbname: str,
         species: str,
         fasta_path: Path,
         *,
@@ -198,13 +198,13 @@ class HostDBManager:
         """Register a new host genome.
 
         Steps:
-            1. Copy FASTA to host_genomes/{nickname}/genome.fa.gz
+            1. Copy FASTA to host_genomes/{dbname}/genome.fa.gz
             2. Build minimap2 index (unless skip_index=True)
             3. Write info.json
             4. Update _index.json
 
         Args:
-            nickname: Short identifier (e.g., "tmol", "human").
+            dbname: Short identifier (e.g., "tmol", "human").
             species: Full species name (e.g., "Tenebrio molitor").
             fasta_path: Path to reference FASTA file (.fa, .fa.gz, .fasta, etc).
             threads: Number of threads for minimap2 indexing.
@@ -217,7 +217,7 @@ class HostDBManager:
         if not fasta_path.exists():
             raise FileNotFoundError(f"FASTA file not found: {fasta_path}")
 
-        host_entry_dir = self.host_dir / nickname
+        host_entry_dir = self.host_dir / dbname
         host_entry_dir.mkdir(parents=True, exist_ok=True)
 
         # Step 1: Copy FASTA as genome.fa.gz
@@ -241,13 +241,13 @@ class HostDBManager:
                     result.stderr.strip(),
                 )
                 raise RuntimeError(
-                    f"minimap2 indexing failed for {nickname}: {result.stderr.strip()}"
+                    f"minimap2 indexing failed for {dbname}: {result.stderr.strip()}"
                 )
             logger.info("Index created: %s", mmi_path)
 
         # Step 3: Write info.json
         info = {
-            "nickname": nickname,
+            "dbname": dbname,
             "species": species,
             "added": datetime.date.today().isoformat(),
         }
@@ -257,58 +257,58 @@ class HostDBManager:
 
         # Step 4: Update _index.json
         index_data = self._load_index()
-        index_data[nickname] = species
+        index_data[dbname] = species
         self._save_index(index_data)
 
-        logger.info("Host genome '%s' (%s) added successfully.", nickname, species)
+        logger.info("Host genome '%s' (%s) added successfully.", dbname, species)
 
     # ------------------------------------------------------------------
     # remove_host
     # ------------------------------------------------------------------
 
-    def remove_host(self, nickname: str) -> None:
+    def remove_host(self, dbname: str) -> None:
         """Remove a registered host genome.
 
         Deletes the host directory and removes the entry from _index.json.
 
         Args:
-            nickname: Host nickname to remove.
+            dbname: Host dbname to remove.
 
         Raises:
-            KeyError: If the nickname is not registered.
+            KeyError: If the dbname is not registered.
         """
-        host_entry_dir = self.host_dir / nickname
+        host_entry_dir = self.host_dir / dbname
         if not host_entry_dir.is_dir():
-            raise KeyError(f"Host genome not found: {nickname}")
+            raise KeyError(f"Host genome not found: {dbname}")
 
         shutil.rmtree(host_entry_dir)
         logger.info("Removed host directory: %s", host_entry_dir)
 
         # Update _index.json
         index_data = self._load_index()
-        index_data.pop(nickname, None)
+        index_data.pop(dbname, None)
         self._save_index(index_data)
 
-        logger.info("Host genome '%s' removed.", nickname)
+        logger.info("Host genome '%s' removed.", dbname)
 
     # ------------------------------------------------------------------
     # get_host_paths
     # ------------------------------------------------------------------
 
-    def get_host_paths(self, nicknames: list[str]) -> list[Path]:
-        """Get genome.fa.gz paths for the given host nicknames.
+    def get_host_paths(self, dbnames: list[str]) -> list[Path]:
+        """Get genome.fa.gz paths for the given host dbnames.
 
         Args:
-            nicknames: List of host nicknames.
+            dbnames: List of host dbnames.
 
         Returns:
             List of paths to genome.fa.gz files.
 
         Raises:
-            KeyError: If any nickname is not registered.
+            KeyError: If any dbname is not registered.
         """
         paths: list[Path] = []
-        for nick in nicknames:
+        for nick in dbnames:
             fasta = self.host_dir / nick / "genome.fa.gz"
             if not fasta.exists():
                 raise KeyError(f"Host genome not found: {nick}")
@@ -321,7 +321,7 @@ class HostDBManager:
 
     def build_combined_index(
         self,
-        nicknames: list[str],
+        dbnames: list[str],
         output_dir: Path,
         *,
         threads: int = 4,
@@ -332,7 +332,7 @@ class HostDBManager:
         Uses caching: same combination (order-independent) returns existing index.
 
         Args:
-            nicknames: List of host nicknames to combine.
+            dbnames: List of host dbnames to combine.
             output_dir: Directory for the combined index output.
             threads: Number of threads for minimap2.
 
@@ -340,10 +340,10 @@ class HostDBManager:
             Path to the combined .mmi index file.
 
         Raises:
-            KeyError: If any nickname is not registered.
+            KeyError: If any dbname is not registered.
         """
         # Sort for order-independent caching
-        sorted_names = sorted(nicknames)
+        sorted_names = sorted(dbnames)
         cache_key = hashlib.md5("_".join(sorted_names).encode()).hexdigest()[:12]
         combined_name = f"combined_{'_'.join(sorted_names)}_{cache_key}"
         mmi_path = output_dir / f"{combined_name}.mmi"

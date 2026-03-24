@@ -48,24 +48,24 @@ def populated_db(db_dir: Path) -> Path:
     """Create a DB with two host genomes (tmol, zmor) pre-registered."""
     host_base = db_dir / "host_genomes"
 
-    for nickname, species in [
+    for dbname, species in [
         ("tmol", "Tenebrio molitor"),
         ("zmor", "Zophobas morio"),
     ]:
-        d = host_base / nickname
+        d = host_base / dbname
         d.mkdir(parents=True)
 
         # Create a fake gzipped FASTA
         fasta_path = d / "genome.fa.gz"
         with gzip.open(fasta_path, "wt") as f:
-            f.write(f">{nickname}_chr1\nACGTACGTACGT\n")
+            f.write(f">{dbname}_chr1\nACGTACGTACGT\n")
 
         # Create a fake .mmi index
         (d / "genome.mmi").write_bytes(b"\x00" * 64)
 
         # Create info.json
         info = {
-            "nickname": nickname,
+            "dbname": dbname,
             "species": species,
             "added": "2026-03-24",
         }
@@ -97,15 +97,15 @@ class TestListHosts:
 
         assert len(hosts) == 2
 
-        nicknames = {h["nickname"] for h in hosts}
-        assert nicknames == {"tmol", "zmor"}
+        dbnames = {h["dbname"] for h in hosts}
+        assert dbnames == {"tmol", "zmor"}
 
     def test_list_hosts_contains_expected_keys(self, populated_db: Path) -> None:
         mgr = HostDBManager(populated_db)
         hosts = mgr.list_hosts()
 
         for host in hosts:
-            assert "nickname" in host
+            assert "dbname" in host
             assert "species" in host
             assert "indexed" in host
             assert "size_mb" in host
@@ -124,7 +124,7 @@ class TestListHosts:
         fasta_path = d / "genome.fa.gz"
         with gzip.open(fasta_path, "wt") as f:
             f.write(">chr1\nACGT\n")
-        info = {"nickname": "noindex", "species": "Test species", "added": "2026-03-24"}
+        info = {"dbname": "noindex", "species": "Test species", "added": "2026-03-24"}
         (d / "info.json").write_text(json.dumps(info))
 
         mgr = HostDBManager(db_dir)
@@ -174,7 +174,7 @@ class TestAddHost:
             mgr.add_host("human", "Homo sapiens", fasta)
 
         info = json.loads((db_dir / "host_genomes" / "human" / "info.json").read_text())
-        assert info["nickname"] == "human"
+        assert info["dbname"] == "human"
         assert info["species"] == "Homo sapiens"
         assert "added" in info
 
@@ -239,7 +239,7 @@ class TestRemoveHost:
 
         hosts = mgr.list_hosts()
         assert len(hosts) == 1
-        assert hosts[0]["nickname"] == "tmol"
+        assert hosts[0]["dbname"] == "tmol"
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +323,7 @@ class TestBuildCombinedIndex:
     def test_combined_index_different_order_same_cache(
         self, populated_db: Path, tmp_path: Path
     ) -> None:
-        """Order of nicknames should not matter for caching."""
+        """Order of dbnames should not matter for caching."""
         mgr = HostDBManager(populated_db)
         output_dir = tmp_path / "combined"
         output_dir.mkdir()
