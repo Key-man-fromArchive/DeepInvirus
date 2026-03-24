@@ -18,7 +18,7 @@ process BBDUK {
     def prefix = meta.id
     """
     # Step 1: Remove adapters
-    bbduk.sh \\
+    bbduk.sh -Xmx16g \\
         in1=${reads[0]} in2=${reads[1]} \\
         out1=${prefix}_clean1.fastq.gz out2=${prefix}_clean2.fastq.gz \\
         ref=adapters,artifacts \\
@@ -27,7 +27,7 @@ process BBDUK {
         stats=${prefix}.adapter_stats.txt
 
     # Step 2: Remove PhiX and vector contaminants
-    bbduk.sh \\
+    bbduk.sh -Xmx16g \\
         in1=${prefix}_clean1.fastq.gz in2=${prefix}_clean2.fastq.gz \\
         out1=${prefix}_nophix1.fastq.gz out2=${prefix}_nophix2.fastq.gz \\
         ref=/opt/conda/opt/bbmap-39.80-0/resources/phix174_ill.ref.fa.gz \\
@@ -36,7 +36,7 @@ process BBDUK {
         stats=${prefix}.phix_stats.txt
 
     # Step 3: Quality trimming + length filtering
-    bbduk.sh \\
+    bbduk.sh -Xmx16g \\
         in1=${prefix}_nophix1.fastq.gz in2=${prefix}_nophix2.fastq.gz \\
         out1=${prefix}_R1.trimmed.fastq.gz out2=${prefix}_R2.trimmed.fastq.gz \\
         qtrim=r trimq=20 minlength=90 \\
