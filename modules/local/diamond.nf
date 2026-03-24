@@ -3,7 +3,6 @@
 
 process DIAMOND_BLASTX {
     tag "$meta.id"
-    label 'process_high'
     label 'process_diamond'
 
     input:

@@ -5,7 +5,6 @@
 
 process DIVERSITY {
     tag "diversity"
-    label 'process_low'
     label 'process_diversity'
 
     input:

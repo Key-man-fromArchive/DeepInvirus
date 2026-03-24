@@ -3,7 +3,6 @@
 
 process INPUT_CHECK {
     tag "input_check"
-    label 'process_low'
 
     input:
     path(reads)

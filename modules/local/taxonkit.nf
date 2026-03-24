@@ -3,7 +3,6 @@
 
 process TAXONKIT_REFORMAT {
     tag "$meta.id"
-    label 'process_low'
     label 'process_taxonkit'
 
     input:

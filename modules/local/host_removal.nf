@@ -10,7 +10,6 @@
  */
 process HOST_INDEX {
     tag "${host_genome.baseName}"
-    label 'process_medium'
     label 'process_host_removal'
 
     input:
@@ -51,7 +50,6 @@ process HOST_INDEX {
  */
 process HOST_REMOVAL {
     tag "$meta.id"
-    label 'process_high'
     label 'process_host_removal'
 
     input:

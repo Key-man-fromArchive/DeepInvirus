@@ -5,7 +5,6 @@
 
 process BBDUK {
     tag "$meta.id"
-    label 'process_high'
     label 'process_bbduk'
 
     input:

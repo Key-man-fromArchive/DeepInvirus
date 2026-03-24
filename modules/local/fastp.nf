@@ -5,7 +5,6 @@
 
 process FASTP {
     tag "$meta.id"
-    label 'process_medium'
     label 'process_fastp'
 
     input:

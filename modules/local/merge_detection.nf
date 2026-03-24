@@ -4,7 +4,6 @@
 
 process MERGE_DETECTION {
     tag "$meta.id"
-    label 'process_low'
     label 'process_merge'
 
     input:

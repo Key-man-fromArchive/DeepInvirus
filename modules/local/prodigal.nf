@@ -3,7 +3,6 @@
 
 process PRODIGAL {
     tag "$meta.id"
-    label 'process_low'
     label 'process_prodigal'
 
     input:

@@ -3,7 +3,6 @@
 
 process MMSEQS_TAXONOMY {
     tag "$meta.id"
-    label 'process_high'
     label 'process_mmseqs'
 
     input:

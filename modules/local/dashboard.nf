@@ -5,7 +5,6 @@
 
 process DASHBOARD {
     tag "dashboard"
-    label 'process_low'
     label 'process_dashboard'
 
     input:

@@ -4,7 +4,6 @@
 
 process MERGE_RESULTS {
     tag "merge_results"
-    label 'process_low'
     label 'process_merge'
 
     input:

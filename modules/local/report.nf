@@ -4,7 +4,6 @@
 
 process REPORT {
     tag "report"
-    label 'process_low'
     label 'process_report'
 
     input:

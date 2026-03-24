@@ -3,7 +3,6 @@
 
 process METASPADES {
     tag "$meta.id"
-    label 'process_high_memory'
     label 'process_metaspades'
 
     container 'deepinvirus/assembly:1.0.0'

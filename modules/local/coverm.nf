@@ -3,7 +3,6 @@
 
 process COVERM {
     tag "$meta.id"
-    label 'process_medium'
     label 'process_coverm'
 
     input:

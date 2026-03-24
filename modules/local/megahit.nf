@@ -3,7 +3,6 @@
 
 process MEGAHIT {
     tag "$meta.id"
-    label 'process_high'
     label 'process_megahit'
 
     container 'deepinvirus/assembly:1.0.0'
