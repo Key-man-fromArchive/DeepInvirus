@@ -28,12 +28,10 @@ process BBDUK {
         stats=${prefix}.adapter_stats.txt
 
     # Step 2: Remove PhiX and vector contaminants
-    # Use absolute path to BBTools resources directory
-    BBDIR=\$(dirname \$(which bbduk.sh))/../opt/bbmap-*/resources
     bbduk.sh \\
         in1=${prefix}_clean1.fastq.gz in2=${prefix}_clean2.fastq.gz \\
         out1=${prefix}_nophix1.fastq.gz out2=${prefix}_nophix2.fastq.gz \\
-        ref=\${BBDIR}/phix174_ill.ref.fa.gz,\${BBDIR}/sequencing_artifacts.fa.gz \\
+        ref=/opt/conda/opt/bbmap-39.80-0/resources/phix174_ill.ref.fa.gz \\
         k=31 hdist=1 \\
         threads=${task.cpus} \\
         stats=${prefix}.phix_stats.txt
