@@ -51,7 +51,7 @@ process HOST_INDEX {
  */
 process HOST_REMOVAL {
     tag "$meta.id"
-    label 'process_medium'
+    label 'process_high'
     label 'process_host_removal'
 
     input:
