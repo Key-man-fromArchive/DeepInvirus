@@ -1,5 +1,4 @@
-// @TASK T1.3 - Preprocessing subworkflow: (FASTP|BBDUK) -> HOST_INDEX -> HOST_REMOVAL
-// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
+// Preprocessing subworkflow: (FASTP|BBDUK) -> FastQC -> HOST_INDEX -> HOST_REMOVAL
 
 include { FASTP        } from '../modules/local/fastp'
 include { BBDUK        } from '../modules/local/bbduk'
@@ -33,7 +32,6 @@ workflow PREPROCESSING {
     FASTQC_TRIMMED( ch_trimmed_reads )
 
     // Step 2: Host read removal (conditional on params.host != 'none')
-    // @TASK T-MULTI-HOST - Collect all host genomes and build combined index
     if ( params.host != 'none' ) {
         // Collect all host genome FASTAs and build a single combined index
         HOST_INDEX( ch_host_genome.collect() )

@@ -1,15 +1,12 @@
 #!/usr/bin/env nextflow
 
-// @TASK T0.1, T0.4, T6.1 - DeepInvirus main pipeline entrypoint (final integration)
-// @SPEC docs/planning/02-trd.md#3-파이프라인-상세-설계
-
 nextflow.enable.dsl = 2
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    DeepInvirus - Viral Metagenomics Pipeline
+    DeepInvirus v0.3.0 - Viral Metagenomics Pipeline
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Raw FASTQ -> Virus Detection -> Classification -> Report
+    Raw FASTQ -> QC -> Co-Assembly -> Virus Detection -> Classification -> Report
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -23,10 +20,10 @@ include { CLASSIFICATION } from './subworkflows/classification'
 include { REPORTING      } from './subworkflows/reporting'
 
 // -----------------------------------------------------------------------
-// Pipeline parameters (see: docs/planning/02-trd.md Section 3.1)
+// Pipeline parameters
 // -----------------------------------------------------------------------
 params.reads      = null          // FASTQ files or directory path
-params.host       = 'human'      // Host genome(s): comma-separated nicknames (e.g., 'tmol,zmor') or 'none'
+params.host       = 'human'      // Host genome(s): comma-separated nicknames or 'none'
 params.outdir     = './results'   // Output directory
 params.trimmer    = 'bbduk'      // bbduk or fastp
 params.assembler  = 'megahit'    // megahit or metaspades
@@ -41,7 +38,7 @@ params.help       = false        // Show help message
 def helpMessage() {
     log.info """
     =========================================================
-     DeepInvirus v0.1.0 - Viral Metagenomics Pipeline
+     DeepInvirus v0.3.0 - Viral Metagenomics Pipeline
     =========================================================
 
     Usage:
@@ -124,8 +121,7 @@ if (!(params.search in ['fast', 'sensitive'])) {
     exit 1
 }
 
-// host validation: parse comma-separated nicknames and verify each host directory exists
-// @TASK T-MULTI-HOST - Multi-host genome selection support
+// Validate host genome directories
 if (params.host != 'none') {
     def host_list = params.host.tokenize(',').collect { it.trim() }
     host_list.each { name ->
@@ -137,15 +133,14 @@ if (params.host != 'none') {
 // -----------------------------------------------------------------------
 // Log pipeline info
 // -----------------------------------------------------------------------
-// @TASK T-RAMDISK - Log RAM disk status if enabled
 if (params.use_ramdisk) {
-    log.info "RAM disk enabled: work directory → ${params.ramdisk_path}"
+    log.info "RAM disk enabled: work directory -> ${params.ramdisk_path}"
     log.info "  (pass -w ${params.ramdisk_path} via CLI runner for actual effect)"
 }
 
 log.info """
 =========================================================
- DeepInvirus v0.1.0
+ DeepInvirus v0.3.0
 =========================================================
  reads      : ${params.reads}
  host       : ${params.host}
@@ -165,8 +160,7 @@ log.info """
 // -----------------------------------------------------------------------
 workflow {
 
-    // --- INPUT_CHECK: Build sample channel from reads parameter ---
-    // Create channel of [meta, [R1, R2]] tuples from glob pattern
+    // --- Build sample channel from reads parameter ---
     ch_reads = Channel
         .fromFilePairs( params.reads, checkIfExists: true )
         .map { sample_id, reads ->
@@ -174,10 +168,7 @@ workflow {
             [ meta, reads ]
         }
 
-    // --- Host genome channel setup ---
-    // @TASK T1.3, T-MULTI-HOST - Set host genome paths from comma-separated nicknames
-    // @SPEC docs/planning/04-database-design.md#host_genomes
-    // Host genome: parse comma-separated nicknames, collect all genome.fa.gz files
+    // --- Host genome channel ---
     if ( params.host != 'none' ) {
         def host_list = params.host.tokenize(',').collect { it.trim() }
         def host_fastas = host_list.collect { name ->
@@ -188,48 +179,43 @@ workflow {
         ch_host_genome = Channel.empty()
     }
 
-    // --- DB path channels ---
-    // @TASK T6.1 - Database directory channels for classification tools
+    // --- Database path channels ---
     def db_base = params.db_dir ?: 'databases'
     ch_sample_map = Channel.fromPath("${db_base}/sample_map.tsv", checkIfExists: false)
     ch_ictv_vmr   = Channel.fromPath("${db_base}/taxonomy/ictv_vmr.tsv", checkIfExists: false)
 
-    // --- Step 1: PREPROCESSING (FASTP + HOST_REMOVAL) ---
-    PREPROCESSING( ch_reads, ch_host_genome )
-
-    // --- Step 2: ASSEMBLY (MEGAHIT or METASPADES) ---
-    ASSEMBLY( PREPROCESSING.out.filtered_reads )
-
-    // --- Step 3: DETECTION (GENOMAD + DIAMOND -> MERGE) ---
-    // DB channels for detection tools
     ch_genomad_db = Channel.value(
-        file("${params.db_dir ?: 'databases'}/genomad_db", checkIfExists: true)
+        file("${db_base}/genomad_db", checkIfExists: true)
     )
     ch_diamond_db = Channel.value(
-        file("${params.db_dir ?: 'databases'}/viral_protein/uniref90_viral.dmnd", checkIfExists: true)
+        file("${db_base}/viral_protein/uniref90_viral.dmnd", checkIfExists: true)
     )
 
+    // --- Step 1: PREPROCESSING ---
+    PREPROCESSING( ch_reads, ch_host_genome )
+
+    // --- Step 2: CO-ASSEMBLY (all reads pooled -> single MEGAHIT/metaSPAdes run) ---
+    ASSEMBLY( PREPROCESSING.out.filtered_reads )
+
+    // --- Step 3: DETECTION (geNomad + Diamond on co-assembly contigs, runs once) ---
     DETECTION( ASSEMBLY.out.contigs, ch_genomad_db, ch_diamond_db )
 
-    // --- Step 4: CLASSIFICATION (MMSEQS -> TAXONKIT -> COVERM -> MERGE_RESULTS -> DIVERSITY) ---
+    // --- Step 4: CLASSIFICATION (MMseqs2 + TaxonKit on co-assembly, CoverM per-sample) ---
     CLASSIFICATION(
-        ASSEMBLY.out.contigs,
-        PREPROCESSING.out.filtered_reads,
-        ASSEMBLY.out.contigs,
-        DETECTION.out.detected_seqs,
+        ASSEMBLY.out.contigs,           // co-assembly contigs (single file)
+        PREPROCESSING.out.filtered_reads, // per-sample reads for coverage mapping
+        DETECTION.out.detected_seqs,    // detection results (coassembly)
         ch_sample_map,
         ch_ictv_vmr
     )
 
-    // --- Step 5: REPORTING (DASHBOARD + REPORT + MULTIQC) ---
-    // Collect per-sample stats into aggregated channels for reporting
+    // --- Step 5: REPORTING (Dashboard + Report + MultiQC) ---
     ch_qc_stats = PREPROCESSING.out.trim_stats
         .map { meta, stats -> stats }
         .collect()
 
-    ch_assembly_stats = ASSEMBLY.out.stats
-        .map { meta, stats -> stats }
-        .collect()
+    // Assembly stats is now a single file (co-assembly), wrap in list for collect
+    ch_assembly_stats = ASSEMBLY.out.stats.collect()
 
     REPORTING(
         CLASSIFICATION.out.bigtable,
@@ -247,7 +233,6 @@ workflow {
 
 // -----------------------------------------------------------------------
 // Completion handler
-// @TASK T6.1 - Pipeline completion summary
 // -----------------------------------------------------------------------
 workflow.onComplete {
     log.info """
@@ -271,7 +256,6 @@ workflow.onComplete {
         log.info "  - Bigtable  : ${params.outdir}/taxonomy/bigtable.tsv"
     }
 
-    // @TASK T-RAMDISK - Reminder about RAM disk cleanup
     if (params.use_ramdisk) {
         log.info "Note: RAM disk cleanup is handled by the CLI runner (ramdisk_manager.py)."
         log.info "  If running Nextflow directly, clean up manually: rm -rf ${params.ramdisk_path}"
@@ -280,7 +264,6 @@ workflow.onComplete {
 
 // -----------------------------------------------------------------------
 // Error handler
-// @TASK T6.1 - Pipeline error reporting
 // -----------------------------------------------------------------------
 workflow.onError {
     log.error """
