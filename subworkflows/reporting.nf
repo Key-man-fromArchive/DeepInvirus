@@ -1,6 +1,4 @@
-// @TASK T5.3 - Reporting subworkflow: DASHBOARD + REPORT + MULTIQC
-// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
-// @SPEC docs/planning/02-trd.md#3.3-출력
+// Reporting subworkflow: DASHBOARD + REPORT + MULTIQC
 
 include { DASHBOARD } from '../modules/local/dashboard'
 include { REPORT    } from '../modules/local/report'
@@ -42,18 +40,13 @@ workflow REPORTING {
         ch_assembly_stats
     )
 
-    // Step 3: MultiQC aggregate QC report from fastp JSONs + FastQC zips
-    ch_fastqc_files = ch_fastqc_raw
-        .mix( ch_fastqc_trimmed )
-        .map{ meta, f -> f }
-        .collect()
-        .ifEmpty( [] )
+    // Step 3: MultiQC aggregate QC report
+    // Use trim stats (fastp JSON or bbduk stats) for MultiQC
+    // FastQC results are published separately to avoid filename collision
     ch_multiqc_files = ch_fastp_json
         .map{ meta, f -> f }
         .collect()
         .ifEmpty( [] )
-        .mix( ch_fastqc_files )
-        .collect()
     MULTIQC( ch_multiqc_files )
 
     emit:

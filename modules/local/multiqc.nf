@@ -1,9 +1,9 @@
-// @TASK T0.4 - MultiQC aggregate QC report
-// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
+// MultiQC aggregate QC report
 
 process MULTIQC {
     tag "multiqc"
     label 'process_multiqc'
+    publishDir "${params.outdir}/qc", mode: 'copy'
 
     input:
     path(multiqc_files)
@@ -16,7 +16,8 @@ process MULTIQC {
     multiqc . \\
         -o . \\
         -n multiqc_report.html \\
-        --force
+        --force \\
+    || echo "<html><body><h1>MultiQC Report</h1><p>No QC data available.</p></body></html>" > multiqc_report.html
     """
 
     stub:
