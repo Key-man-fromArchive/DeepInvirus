@@ -58,9 +58,54 @@ from tui.widgets.log_viewer import LogViewer
 from tui.widgets.progress import ProgressWidget
 
 # ---------------------------------------------------------------------------
-# Host genome options
+# Host genome options (dynamic loading from DB)
 # ---------------------------------------------------------------------------
 
+
+def _load_host_options(db_dir: Path | None = None) -> list[tuple[str, str]]:
+    """Load available host genomes from the database directory.
+
+    Scans databases/host_genomes/ for registered hosts and returns
+    a list of (display_label, nickname) tuples for use in checkboxes.
+
+    Args:
+        db_dir: Root database directory. If None, uses 'databases'.
+
+    Returns:
+        List of (label, nickname) tuples. Always includes "None" option.
+    """
+    import json
+
+    options: list[tuple[str, str]] = []
+    host_base = (db_dir or Path("databases")) / "host_genomes"
+
+    if host_base.is_dir():
+        for entry in sorted(host_base.iterdir()):
+            if not entry.is_dir() or entry.name.startswith("_"):
+                continue
+            info_path = entry / "info.json"
+            if info_path.exists():
+                try:
+                    info = json.loads(info_path.read_text())
+                    nickname = info.get("nickname", entry.name)
+                    species = info.get("species", "Unknown")
+                    options.append((f"{nickname} ({species})", nickname))
+                except (json.JSONDecodeError, OSError):
+                    options.append((entry.name, entry.name))
+            else:
+                options.append((entry.name, entry.name))
+
+    # Fallback: include common built-in options if nothing found
+    if not options:
+        options = [
+            ("human (Homo sapiens)", "human"),
+            ("mouse (Mus musculus)", "mouse"),
+        ]
+
+    return options
+
+
+# Legacy static options (used when DB scanning is not available)
 _HOST_OPTIONS: list[tuple[str, str]] = [
     ("Human (Homo sapiens)", "human"),
     ("Mouse (Mus musculus)", "mouse"),
@@ -113,6 +158,9 @@ class RunScreen(Screen):
         """Build the parameter form layout."""
         default_threads = str(os.cpu_count() or 1)
 
+        # Load dynamic host options from DB
+        host_options = _load_host_options()
+
         with ScrollableContainer():
             yield Static(" Run Analysis", classes="section-title")
 
@@ -126,14 +174,21 @@ class RunScreen(Screen):
                 )
                 yield Static("", id="error-reads", classes="text-error")
 
-                # ---- Host genome ----------------------------------------
-                yield Label("Host genome", classes="form-label")
-                yield Select(
-                    options=_HOST_OPTIONS,
-                    value="human",
-                    id="select-host",
-                    classes="form-field",
+                # ---- Host genome (multi-select checkboxes) ---------------
+                # @TASK T-MULTI-HOST - Checkbox-based multi-host selection
+                yield Label("Host genome(s)", classes="form-label")
+                yield Static(
+                    "Select one or more hosts (uncheck all for no host removal):",
+                    classes="form-hint",
                 )
+                with Vertical(id="host-checkboxes", classes="form-field"):
+                    for label, nickname in host_options:
+                        yield Checkbox(
+                            label,
+                            value=False,
+                            id=f"host-cb-{nickname}",
+                            classes="host-checkbox",
+                        )
 
                 # ---- Assembler -----------------------------------------
                 yield Label("Assembler", classes="form-label")
@@ -214,8 +269,19 @@ class RunScreen(Screen):
         """
         reads_val = self.query_one("#input-reads", Input).value.strip()
 
-        host_widget = self.query_one("#select-host", Select)
-        host_val = str(host_widget.value) if host_widget.value else "human"
+        # Collect selected host nicknames from checkboxes
+        # @TASK T-MULTI-HOST - Read multi-host checkbox selections
+        selected_hosts = []
+        try:
+            host_container = self.query_one("#host-checkboxes")
+            for cb in host_container.query(Checkbox):
+                if cb.value and cb.id and cb.id.startswith("host-cb-"):
+                    nickname = cb.id.replace("host-cb-", "")
+                    selected_hosts.append(nickname)
+        except Exception:
+            pass
+
+        host_val = ",".join(selected_hosts) if selected_hosts else "none"
 
         assembler_widget = self.query_one("#radioset-assembler", RadioSet)
         assembler_val = (

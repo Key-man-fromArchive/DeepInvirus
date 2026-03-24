@@ -25,9 +25,10 @@ workflow PREPROCESSING {
     }
 
     // Step 2: Host read removal (conditional on params.host != 'none')
+    // @TASK T-MULTI-HOST - Collect all host genomes and build combined index
     if ( params.host != 'none' ) {
-        // Build minimap2 index from host genome FASTA
-        HOST_INDEX( ch_host_genome )
+        // Collect all host genome FASTAs and build a single combined index
+        HOST_INDEX( ch_host_genome.collect() )
 
         // Collect index so it can be reused for all samples
         ch_index = HOST_INDEX.out.index.collect()

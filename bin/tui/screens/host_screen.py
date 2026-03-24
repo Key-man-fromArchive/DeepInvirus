@@ -12,6 +12,7 @@ bin/add_host.py) and remove selected hosts.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -169,16 +170,23 @@ class HostScreen(Screen):
         # Add Host inline form (hidden by default)
         with Vertical(id="add-host-form"):
             with Horizontal(classes="form-row"):
-                yield Static("Name:", classes="form-label")
+                yield Static("Nickname:", classes="form-label")
                 yield Input(
-                    placeholder="e.g. beetle",
-                    id="input-host-name",
+                    placeholder="e.g. tmol (short identifier for --host)",
+                    id="input-host-nickname",
+                    classes="form-field",
+                )
+            with Horizontal(classes="form-row"):
+                yield Static("Species:", classes="form-label")
+                yield Input(
+                    placeholder="e.g. Tenebrio molitor",
+                    id="input-host-species",
                     classes="form-field",
                 )
             with Horizontal(classes="form-row"):
                 yield Static("FASTA path:", classes="form-label")
                 yield Input(
-                    placeholder="/path/to/reference.fa",
+                    placeholder="/path/to/reference.fa.gz",
                     id="input-fasta-path",
                     classes="form-field",
                 )
@@ -204,7 +212,7 @@ class HostScreen(Screen):
     def _setup_table(self) -> None:
         """Add columns to the DataTable."""
         table = self.query_one("#host-table", DataTable)
-        table.add_columns("Name", "Index Status", "Size")
+        table.add_columns("Nickname", "Species", "Index Status", "Size")
 
     def _refresh_table(self) -> None:
         """Clear and re-populate the host genome table."""
@@ -218,7 +226,9 @@ class HostScreen(Screen):
         for host in hosts:
             index_icon = "YES" if host["indexed"] else "NO"
             size_str = _format_size(host["size"])
-            table.add_row(host["name"], index_icon, size_str)
+            nickname = host.get("nickname", host["name"])
+            species = host.get("species", "Unknown")
+            table.add_row(nickname, species, index_icon, size_str)
 
     # ------------------------------------------------------------------
     # list_hosts: directory scanner
@@ -229,6 +239,8 @@ class HostScreen(Screen):
 
         Each dict contains:
             - name (str): directory name (e.g. "human")
+            - nickname (str): short identifier from info.json (e.g. "tmol")
+            - species (str): full species name from info.json
             - indexed (bool): True if any .mmi file exists
             - size (int): total file size in bytes
 
@@ -247,6 +259,23 @@ class HostScreen(Screen):
         for entry in sorted(host_genomes_dir.iterdir()):
             if not entry.is_dir():
                 continue
+            # Skip internal files like _index.json
+            if entry.name.startswith("_"):
+                continue
+
+            # Read info.json if present
+            info_path = entry / "info.json"
+            if info_path.exists():
+                try:
+                    info = json.loads(info_path.read_text())
+                    nickname = info.get("nickname", entry.name)
+                    species = info.get("species", "Unknown")
+                except (json.JSONDecodeError, OSError):
+                    nickname = entry.name
+                    species = "Unknown"
+            else:
+                nickname = entry.name
+                species = "Unknown"
 
             # Check for .mmi index files
             mmi_files = list(entry.glob("*.mmi"))
@@ -257,6 +286,8 @@ class HostScreen(Screen):
 
             hosts.append({
                 "name": entry.name,
+                "nickname": nickname,
+                "species": species,
                 "indexed": indexed,
                 "size": size,
             })
@@ -299,16 +330,18 @@ class HostScreen(Screen):
         """Hide the Add Host inline form and clear inputs."""
         form = self.query_one("#add-host-form")
         form.remove_class("visible")
-        self.query_one("#input-host-name", Input).value = ""
+        self.query_one("#input-host-nickname", Input).value = ""
+        self.query_one("#input-host-species", Input).value = ""
         self.query_one("#input-fasta-path", Input).value = ""
 
     def _execute_add_host(self) -> None:
         """Run bin/add_host.py as subprocess with form values."""
-        name = self.query_one("#input-host-name", Input).value.strip()
+        nickname = self.query_one("#input-host-nickname", Input).value.strip()
+        species = self.query_one("#input-host-species", Input).value.strip()
         fasta_path = self.query_one("#input-fasta-path", Input).value.strip()
 
-        if not name:
-            self.notify("Host name is required.", severity="error")
+        if not nickname:
+            self.notify("Nickname is required.", severity="error")
             return
         if not fasta_path:
             self.notify("FASTA path is required.", severity="error")
@@ -329,12 +362,14 @@ class HostScreen(Screen):
         cmd = [
             sys.executable,
             str(add_host_script),
-            "--name", name,
+            "--name", nickname,
+            "--nickname", nickname,
+            "--species", species or "Unknown",
             "--fasta", str(fasta),
             "--db-dir", str(self.db_dir),
         ]
 
-        self.notify(f"Adding host genome '{name}'...", severity="information")
+        self.notify(f"Adding host genome '{nickname}'...", severity="information")
 
         try:
             result = subprocess.run(

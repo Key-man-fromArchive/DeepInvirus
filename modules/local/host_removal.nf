@@ -3,33 +3,43 @@
 // @SPEC docs/planning/07-coding-convention.md#4.1-Process-템플릿
 
 /*
- * HOST_INDEX: Build minimap2 index from host genome FASTA.
+ * HOST_INDEX: Build minimap2 index from one or more host genome FASTAs.
  *
- * Runs once per host genome. The .mmi index is reused by all samples.
- * minimap2 -d builds a pre-built index that speeds up subsequent alignments.
+ * Accepts multiple host genome FASTA files (collected via .collect()).
+ * Concatenates them into a single combined FASTA and builds one minimap2
+ * index for efficient multi-host read removal.
+ *
+ * When only a single host genome is provided, the cat+minimap2 pipeline
+ * still works correctly (cat of one file = the file itself).
  */
 process HOST_INDEX {
-    tag "${host_genome.baseName}"
+    tag "host_index"
     label 'process_host_removal'
 
     input:
-    path(host_genome)
+    path(host_genomes)
 
     output:
-    path("*.mmi"), emit: index
+    path("combined_host.mmi"), emit: index
 
     script:
-    def prefix = host_genome.baseName
     """
+    # Concatenate all host genomes into a single FASTA
+    cat ${host_genomes} > combined_host.fa.gz
+
+    # Build minimap2 index from the combined FASTA
     minimap2 \\
-        -d ${prefix}.mmi \\
-        ${host_genome}
+        -t ${task.cpus} \\
+        -d combined_host.mmi \\
+        combined_host.fa.gz
+
+    # Cleanup intermediate combined FASTA
+    rm -f combined_host.fa.gz
     """
 
     stub:
-    def prefix = host_genome.baseName
     """
-    touch ${prefix}.mmi
+    touch combined_host.mmi
     """
 }
 

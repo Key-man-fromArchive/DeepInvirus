@@ -26,7 +26,7 @@ include { REPORTING      } from './subworkflows/reporting'
 // Pipeline parameters (see: docs/planning/02-trd.md Section 3.1)
 // -----------------------------------------------------------------------
 params.reads      = null          // FASTQ files or directory path
-params.host       = 'human'      // Host genome: human, mouse, insect, none
+params.host       = 'human'      // Host genome(s): comma-separated nicknames (e.g., 'tmol,zmor') or 'none'
 params.outdir     = './results'   // Output directory
 params.trimmer    = 'bbduk'      // bbduk or fastp
 params.assembler  = 'megahit'    // megahit or metaspades
@@ -52,8 +52,9 @@ def helpMessage() {
                       (e.g., '/data/*_R{1,2}.fastq.gz')
 
     Optional:
-        --host        Host genome for read removal
-                      Options: human, mouse, insect, none
+        --host        Host genome(s) for read removal
+                      Comma-separated nicknames: tmol,zmor,human
+                      Use 'none' to skip host removal
                       [default: ${params.host}]
 
         --outdir      Output directory
@@ -123,12 +124,14 @@ if (!(params.search in ['fast', 'sensitive'])) {
     exit 1
 }
 
-// host validation: allow built-in names or 'none' or any custom name (directory must exist)
-def builtin_hosts = ['human', 'mouse', 'insect', 'none']
-if (!(params.host in builtin_hosts)) {
-    // Custom host: check if directory exists
-    def custom_host_dir = "${params.db_dir ?: 'databases'}/host_genomes/${params.host}"
-    log.info "Using custom host genome: ${params.host} (${custom_host_dir})"
+// host validation: parse comma-separated nicknames and verify each host directory exists
+// @TASK T-MULTI-HOST - Multi-host genome selection support
+if (params.host != 'none') {
+    def host_list = params.host.tokenize(',').collect { it.trim() }
+    host_list.each { name ->
+        def host_dir = "${params.db_dir ?: 'databases'}/host_genomes/${name}"
+        log.info "Host genome: ${name} (${host_dir})"
+    }
 }
 
 // -----------------------------------------------------------------------
@@ -164,16 +167,15 @@ workflow {
         }
 
     // --- Host genome channel setup ---
-    // @TASK T1.3 - Set host genome path based on params.host
+    // @TASK T1.3, T-MULTI-HOST - Set host genome paths from comma-separated nicknames
     // @SPEC docs/planning/04-database-design.md#host_genomes
-    // Host genome: support built-in + custom names
-    def host_genome_path = "${params.db_dir ?: 'databases'}/host_genomes/${params.host}/genome.fa.gz"
-
+    // Host genome: parse comma-separated nicknames, collect all genome.fa.gz files
     if ( params.host != 'none' ) {
-        ch_host_genome = Channel.fromPath(
-            host_genome_path,
-            checkIfExists: true
-        )
+        def host_list = params.host.tokenize(',').collect { it.trim() }
+        def host_fastas = host_list.collect { name ->
+            file("${params.db_dir ?: 'databases'}/host_genomes/${name}/genome.fa.gz", checkIfExists: true)
+        }
+        ch_host_genome = Channel.fromList(host_fastas)
     } else {
         ch_host_genome = Channel.empty()
     }

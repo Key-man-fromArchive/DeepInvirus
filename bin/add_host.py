@@ -7,11 +7,12 @@
 Add a custom host reference genome to the DeepInvirus database.
 
 Copies a FASTA file into the database directory, builds a minimap2 index,
-and updates VERSION.json.
+creates info.json with nickname/species metadata, and updates both
+VERSION.json and _index.json.
 
 Usage:
-    python add_host.py --name beetle --fasta ref.fa --db-dir /data/db
-    python add_host.py --name beetle --fasta ref.fa --db-dir /data/db --dry-run
+    python add_host.py --name beetle --nickname btl --species "Beetle sp." --fasta ref.fa --db-dir /data/db
+    python add_host.py --name tmol --nickname tmol --species "Tenebrio molitor" --fasta ref.fa --db-dir /data/db --dry-run
     python add_host.py --name beetle --fasta ref.fa --db-dir /data/db --skip-index
 """
 
@@ -162,6 +163,8 @@ def add_host(
     fasta: Path,
     db_dir: Path,
     *,
+    nickname: str | None = None,
+    species: str = "Unknown",
     threads: int = 4,
     dry_run: bool = False,
     skip_index: bool = False,
@@ -169,23 +172,34 @@ def add_host(
     """Add a host reference genome to the database.
 
     Steps:
-        1. Copy FASTA to db_dir/host_genomes/{name}/
+        1. Copy FASTA to db_dir/host_genomes/{nickname}/genome.fa.gz
         2. Build minimap2 index (.mmi)
-        3. Update VERSION.json
+        3. Create info.json with nickname/species metadata
+        4. Update _index.json (nickname -> species mapping)
+        5. Update VERSION.json
 
     Args:
         name: Host genome name (e.g., "beetle", "human").
         fasta: Path to the reference genome FASTA file.
         db_dir: Root database directory.
+        nickname: Short identifier for multi-host selection (e.g., "tmol").
+                  If None, uses the name as nickname.
+        species: Full species name (e.g., "Tenebrio molitor").
         threads: Number of threads for minimap2 indexing.
         dry_run: If True, print plan without executing.
         skip_index: If True, skip minimap2 indexing (copy FASTA + update VERSION only).
     """
-    host_dir = db_dir / "host_genomes" / name
+    # Use name as nickname if not provided (backward compatibility)
+    if nickname is None:
+        nickname = name
+
+    host_dir = db_dir / "host_genomes" / nickname
 
     logger.info("=" * 50)
     logger.info("Add Host Genome: %s", name)
     logger.info("=" * 50)
+    logger.info("  Nickname   : %s", nickname)
+    logger.info("  Species    : %s", species)
     logger.info("  FASTA      : %s", fasta)
     logger.info("  DB dir     : %s", db_dir)
     logger.info("  Host dir   : %s", host_dir)
@@ -201,31 +215,59 @@ def add_host(
     if dry_run:
         logger.info("[DRY-RUN] Would copy %s to %s", fasta, host_dir)
         logger.info("[DRY-RUN] Would build minimap2 index")
+        logger.info("[DRY-RUN] Would create info.json and update _index.json")
         logger.info("[DRY-RUN] Would update VERSION.json")
         logger.info("Dry-run complete.")
         return
 
-    # Step 1: Copy FASTA
+    # Step 1: Copy FASTA as genome.fa.gz
     copied_fasta = copy_fasta(fasta, host_dir)
 
     # Step 2: Build minimap2 index (optional)
     if not skip_index:
         build_minimap2_index(
-            copied_fasta, host_dir, name=name, threads=threads,
+            copied_fasta, host_dir, name=nickname, threads=threads,
         )
 
-    # Step 3: Update VERSION.json
+    # Step 3: Create info.json with nickname/species metadata
+    info = {
+        "nickname": nickname,
+        "species": species,
+        "name": name,
+        "added": _today(),
+    }
+    info_path = host_dir / "info.json"
+    with open(info_path, "w") as fh:
+        json.dump(info, fh, indent=2, ensure_ascii=False)
+    logger.info("info.json created: %s", info_path)
+
+    # Step 4: Update _index.json (nickname -> species mapping)
+    index_path = db_dir / "host_genomes" / "_index.json"
+    if index_path.exists():
+        with open(index_path) as fh:
+            index_data = json.load(fh)
+    else:
+        index_data = {}
+    index_data[nickname] = species
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(index_path, "w") as fh:
+        json.dump(index_data, fh, indent=2, ensure_ascii=False)
+    logger.info("_index.json updated: %s", index_path)
+
+    # Step 5: Update VERSION.json
     version_data = _load_version(db_dir)
     host_genomes = version_data["databases"].setdefault("host_genomes", {})
-    host_genomes[name] = {
+    host_genomes[nickname] = {
         "host": name,
+        "nickname": nickname,
+        "species": species,
         "fasta": str(copied_fasta.name),
         "downloaded_at": _today(),
         "format": "minimap2",
     }
     _save_version(db_dir, version_data)
 
-    logger.info("Host genome '%s' added successfully.", name)
+    logger.info("Host genome '%s' (nickname: %s) added successfully.", name, nickname)
 
 
 # ---------------------------------------------------------------------------
@@ -243,12 +285,14 @@ def build_parser() -> argparse.ArgumentParser:
         prog="add_host",
         description=(
             "Add a custom host reference genome to the DeepInvirus database. "
-            "Copies FASTA, builds minimap2 index, and updates VERSION.json."
+            "Copies FASTA, builds minimap2 index, creates info.json, "
+            "and updates VERSION.json and _index.json."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python add_host.py --name beetle --fasta beetle_ref.fa --db-dir /data/db\n"
+            "  python add_host.py --name beetle --nickname btl --species 'Beetle sp.' --fasta ref.fa --db-dir /data/db\n"
+            "  python add_host.py --name tmol --nickname tmol --species 'Tenebrio molitor' --fasta ref.fa --db-dir /data/db\n"
             "  python add_host.py --name beetle --fasta beetle_ref.fa --db-dir /data/db --dry-run\n"
             "  python add_host.py --name beetle --fasta beetle_ref.fa --db-dir /data/db --skip-index\n"
         ),
@@ -258,6 +302,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         required=True,
         help="Host genome name (e.g., beetle, chicken).",
+    )
+    parser.add_argument(
+        "--nickname",
+        type=str,
+        default=None,
+        help="Short identifier for multi-host selection (e.g., tmol, zmor). Defaults to --name.",
+    )
+    parser.add_argument(
+        "--species",
+        type=str,
+        default="Unknown",
+        help="Full species name (e.g., 'Tenebrio molitor'). Default: 'Unknown'.",
     )
     parser.add_argument(
         "--fasta",
@@ -314,6 +370,8 @@ def main(argv: list[str] | None = None) -> None:
         name=args.name,
         fasta=args.fasta,
         db_dir=args.db_dir,
+        nickname=args.nickname,
+        species=args.species,
         threads=args.threads,
         dry_run=args.dry_run,
         skip_index=args.skip_index,
