@@ -81,6 +81,7 @@ class DeepInVirusApp(App):
         """Push MainScreen as the initial (default) screen on startup."""
         self.push_screen("main")
         self._check_interrupted_runs()
+        self._check_db_ages()
 
     def _check_interrupted_runs(self) -> None:
         """Detect runs left in 'running' status from a previous crash.
@@ -104,6 +105,48 @@ class DeepInVirusApp(App):
                 title="Interrupted Run Found",
                 timeout=10,
             )
+        except Exception:
+            pass
+
+    # @TASK T-DB-LIFECYCLE - DB age check on startup
+    def _check_db_ages(self) -> None:
+        """Check DB ages and notify if any are stale or outdated."""
+        try:
+            from db_lifecycle import DBLifecycleManager
+
+            # Use default DB directory
+            import os
+            db_dir_env = os.environ.get("DEEPINVIRUS_DB_DIR")
+            if db_dir_env:
+                db_dir = Path(db_dir_env)
+            else:
+                db_dir = Path(__file__).resolve().parents[2] / "databases"
+
+            if not (db_dir / "VERSION.json").exists():
+                return
+
+            mgr = DBLifecycleManager(db_dir)
+            ages = mgr.get_db_ages()
+
+            outdated = [e for e in ages if e["status"] == "outdated"]
+            stale = [e for e in ages if e["status"] == "stale"]
+
+            if outdated:
+                names = ", ".join(e["component"] for e in outdated)
+                self.notify(
+                    f"Outdated databases detected: {names}. "
+                    "Please update in the DB management screen.",
+                    title="Outdated Databases",
+                    timeout=10,
+                )
+            elif stale:
+                names = ", ".join(e["component"] for e in stale)
+                self.notify(
+                    f"Stale databases: {names}. "
+                    "Consider updating in the DB management screen.",
+                    title="Stale Databases",
+                    timeout=8,
+                )
         except Exception:
             pass
 

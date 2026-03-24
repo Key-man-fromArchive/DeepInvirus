@@ -48,6 +48,7 @@ from textual.screen import Screen
 from textual.widgets import Button, DataTable, Static
 
 from db_indexer import DBIndexer
+from db_lifecycle import DBLifecycleManager
 from tui.widgets.progress import ProgressWidget
 
 # ---------------------------------------------------------------------------
@@ -168,12 +169,12 @@ class DbScreen(Screen):
 
         with Static(classes="button-row"):
             yield Button(
-                "Install All",
+                "Install",
                 id="install-all",
                 classes="primary",
             )
             yield Button(
-                "Update Selected",
+                "Update",
                 id="update-selected",
                 classes="secondary",
             )
@@ -183,8 +184,13 @@ class DbScreen(Screen):
                 classes="secondary",
             )
             yield Button(
-                "Rebuild All",
-                id="rebuild-all",
+                "Remove",
+                id="remove-selected",
+                classes="secondary",
+            )
+            yield Button(
+                "Cleanup Backups",
+                id="cleanup-backups",
                 classes="secondary",
             )
             yield Button(
@@ -421,8 +427,10 @@ class DbScreen(Screen):
             await self.run_update_selected()
         elif button_id == "rebuild-index":
             await self.run_rebuild_index()
-        elif button_id == "rebuild-all":
-            await self.run_rebuild_all()
+        elif button_id == "remove-selected":
+            await self.run_remove_selected()
+        elif button_id == "cleanup-backups":
+            await self.run_cleanup_backups()
         elif button_id == "back":
             self.app.pop_screen()
 
@@ -498,6 +506,67 @@ class DbScreen(Screen):
         except Exception as exc:
             self.notify(str(exc), title="Error", severity="error")
 
+    # ------------------------------------------------------------------
+    # T-DB-LIFECYCLE: Remove and cleanup actions
+    # ------------------------------------------------------------------
+
+    # @TASK T-DB-LIFECYCLE - Remove selected component
+    # @SPEC docs/planning/04-database-design.md#DB-갱신-전략
+
+    async def run_remove_selected(self) -> None:
+        """Remove the component selected in the DataTable (with backup)."""
+        try:
+            table = self.query_one("#db-table", DataTable)
+            row_key = table.cursor_row
+            if row_key is None:
+                self.notify(
+                    "No component selected.",
+                    title="Warning",
+                    severity="warning",
+                )
+                return
+
+            row_data = table.get_row_at(row_key)
+            component_name = str(row_data[0]).strip()
+            comp_key = self._display_to_component_key(component_name)
+
+            if comp_key is None:
+                self.notify(
+                    f"Unknown component: {component_name}",
+                    title="Warning",
+                    severity="warning",
+                )
+                return
+
+            lifecycle = DBLifecycleManager(self.db_dir)
+            lifecycle.remove_component(comp_key, backup=True)
+            self.notify(
+                f"Removed {component_name} (backup created).",
+                title="Success",
+            )
+            self.reload_db_info()
+
+        except Exception as exc:
+            self.notify(str(exc), title="Error", severity="error")
+
+    async def run_cleanup_backups(self) -> None:
+        """Clean up old database backups (older than 30 days)."""
+        try:
+            lifecycle = DBLifecycleManager(self.db_dir)
+            removed = lifecycle.cleanup_backups(max_age_days=30)
+
+            if not removed:
+                self.notify("No old backups to clean up.", title="Info")
+            else:
+                self.notify(
+                    f"Removed {len(removed)} old backup(s).",
+                    title="Success",
+                )
+            self.reload_db_info()
+
+        except Exception as exc:
+            self.notify(str(exc), title="Error", severity="error")
+
     async def _run_shell_command(self, cmd_str: str, label: str = "") -> None:
         """Execute a shell command asynchronously with progress display.
 
@@ -559,17 +628,17 @@ class DbScreen(Screen):
     # ------------------------------------------------------------------
 
     def _setup_table(self) -> None:
-        """Configure the DataTable columns (includes Tool and Index)."""
+        """Configure the DataTable columns (includes Tool, Index, Age, Status)."""
         try:
             table = self.query_one("#db-table", DataTable)
             table.add_columns(
-                "Component", "Tool", "Index", "Version", "Updated", "Status",
+                "Component", "Tool", "Index", "Version", "Age", "Status", "Size",
             )
         except Exception:
             pass
 
     def _populate_table(self) -> None:
-        """Fill the DataTable with current DB info (includes Tool/Index)."""
+        """Fill the DataTable with current DB info (includes Tool/Index/Age/Status)."""
         try:
             table = self.query_one("#db-table", DataTable)
             table.clear()
@@ -581,13 +650,27 @@ class DbScreen(Screen):
                 e["component"]: e for e in index_status
             }
 
+            # Build age/status lookup from DBLifecycleManager
+            lifecycle = DBLifecycleManager(self.db_dir)
+            age_entries = lifecycle.get_db_ages()
+            age_map: dict[str, dict] = {
+                e["component"]: e for e in age_entries
+            }
+
+            # Status label -> display string with indicator
+            status_display = {
+                "fresh": "Fresh",
+                "ok": "OK",
+                "stale": "Stale",
+                "outdated": "Outdated",
+            }
+
             info = self.load_db_info()
 
             if info:
                 for entry in info:
                     comp_key = entry["component"]
                     label = COMPONENT_LABELS.get(comp_key, comp_key)
-                    # Host genome entries
                     if comp_key.startswith("host:"):
                         host_name = comp_key.split(":")[1]
                         label = f"Host: {host_name}"
@@ -598,14 +681,24 @@ class DbScreen(Screen):
                     indexed = idx_info.get("indexed", False)
                     index_str = "OK" if indexed else "Missing"
 
-                    status = "OK" if entry["installed"] else "Missing"
+                    # Fetch age/status from lifecycle manager
+                    age_info = age_map.get(comp_key, {})
+                    age_days = age_info.get("age_days", "-")
+                    age_str = f"{age_days}d" if isinstance(age_days, int) else "-"
+                    status_key = age_info.get("status", "")
+                    status_str = status_display.get(status_key, "-")
+
+                    # Size from indexer
+                    size_mb = idx_info.get("size_mb", 0)
+                    size_str = (
+                        f"{size_mb:.0f}MB" if size_mb >= 1
+                        else f"{size_mb:.1f}MB" if size_mb > 0
+                        else "-"
+                    )
+
                     table.add_row(
-                        label,
-                        tool,
-                        index_str,
-                        entry["version"],
-                        entry["updated"],
-                        status,
+                        label, tool, index_str, entry["version"],
+                        age_str, status_str, size_str,
                     )
 
                 # Add known components that are NOT installed
@@ -616,7 +709,7 @@ class DbScreen(Screen):
                         idx_info = index_map.get(comp_key, {})
                         tool = idx_info.get("tool", "-")
                         table.add_row(
-                            label, tool, "-", "-", "-", "Not installed",
+                            label, tool, "-", "-", "-", "Not installed", "-",
                         )
             else:
                 # No VERSION.json - show all as not installed
@@ -627,10 +720,37 @@ class DbScreen(Screen):
                     indexed = idx_info.get("indexed", False)
                     index_str = "OK" if indexed else "-"
                     table.add_row(
-                        label, tool, index_str, "-", "-", "Not installed",
+                        label, tool, index_str, "-", "-", "Not installed", "-",
                     )
+
+            # Show warnings for stale/outdated DBs
+            self._show_age_warnings(age_entries)
         except Exception:
             pass
+
+    def _show_age_warnings(self, age_entries: list[dict]) -> None:
+        """Display warning messages for stale/outdated DB components."""
+        warnings: list[str] = []
+        for entry in age_entries:
+            if entry["status"] == "stale":
+                warnings.append(
+                    f"[yellow]Warning: {entry['component']}: "
+                    f"update recommended ({entry['age_days']} days old)[/yellow]"
+                )
+            elif entry["status"] == "outdated":
+                warnings.append(
+                    f"[red]Error: {entry['component']}: "
+                    f"update required ({entry['age_days']} days old)[/red]"
+                )
+
+        if warnings:
+            try:
+                label = self.query_one("#disk-usage", Static)
+                current_text = str(label.renderable) if hasattr(label, "renderable") else ""
+                warning_text = "\n".join(warnings)
+                label.update(f"{current_text}\n{warning_text}")
+            except Exception:
+                pass
 
     def _update_disk_usage(self) -> None:
         """Compute and display total disk usage of the DB directory."""

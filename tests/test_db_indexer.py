@@ -401,10 +401,10 @@ class TestDbScreenIndexColumns:
         source = inspect.getsource(DbScreen.compose)
         assert "rebuild-index" in source or "Rebuild Index" in source
 
-    def test_db_screen_has_rebuild_all_button(self) -> None:
-        """compose() must yield a Rebuild All button."""
+    def test_db_screen_has_remove_button(self) -> None:
+        """compose() must yield a Remove button (replaced Rebuild All)."""
         from tui.screens.db_screen import DbScreen
 
         import inspect
         source = inspect.getsource(DbScreen.compose)
-        assert "rebuild-all" in source or "Rebuild All" in source
+        assert "remove-selected" in source or "Remove" in source

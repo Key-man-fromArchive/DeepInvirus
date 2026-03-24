@@ -333,6 +333,154 @@ def history(list_flag, show, limit):
 
 
 # ---------------------------------------------------------------------------
+# db: Database lifecycle management subcommand group
+# ---------------------------------------------------------------------------
+
+# @TASK T-DB-LIFECYCLE - CLI db subcommand group
+# @SPEC docs/planning/04-database-design.md#DB-갱신-전략
+
+
+@cli.group()
+def db():
+    """Database lifecycle management.
+
+    View status, check for updates, update/remove components,
+    manage backups, and check disk usage.
+    """
+    pass
+
+
+@db.command("status")
+@click.option("--db-dir", required=True, type=click.Path(), help="Root database directory.")
+def db_status(db_dir):
+    """Show DB status with age and freshness info."""
+    from db_lifecycle import DBLifecycleManager
+
+    mgr = DBLifecycleManager(Path(db_dir))
+    ages = mgr.get_db_ages()
+
+    if not ages:
+        click.echo("No databases found. Run 'install-db' first.")
+        return
+
+    # Header
+    click.echo(
+        f"{'Component':<22} {'Version':<16} {'Installed':<12} "
+        f"{'Age (days)':<12} {'Status':<10}"
+    )
+    click.echo("-" * 72)
+
+    for entry in ages:
+        click.echo(
+            f"{entry['component']:<22} {entry['version']:<16} "
+            f"{entry['installed_at']:<12} {entry['age_days']:<12} "
+            f"{entry['status']:<10}"
+        )
+
+
+@db.command("check-updates")
+@click.option("--db-dir", required=True, type=click.Path(), help="Root database directory.")
+def db_check_updates(db_dir):
+    """Check which databases may need updating."""
+    from db_lifecycle import DBLifecycleManager
+
+    mgr = DBLifecycleManager(Path(db_dir))
+    updates = mgr.check_updates_available()
+
+    if not updates:
+        click.echo("No databases found.")
+        return
+
+    click.echo(f"{'Component':<22} {'Current':<12} {'Age':<8} {'Update?':<10}")
+    click.echo("-" * 52)
+
+    for entry in updates:
+        rec = "YES" if entry["update_recommended"] else "no"
+        click.echo(
+            f"{entry['component']:<22} {entry['current']:<12} "
+            f"{entry['age_days']:<8} {rec:<10}"
+        )
+
+
+@db.command("update")
+@click.option("--db-dir", required=True, type=click.Path(), help="Root database directory.")
+@click.option("--component", required=True, help="Component to update.")
+@click.option("--no-backup", is_flag=True, default=False, help="Skip backup before update.")
+def db_update(db_dir, component, no_backup):
+    """Update a specific database component."""
+    from db_lifecycle import DBLifecycleManager
+
+    mgr = DBLifecycleManager(Path(db_dir))
+    cmd = mgr.update_component(component, backup=not no_backup)
+
+    if not cmd:
+        click.echo(f"Unknown component: {component}")
+        return
+
+    click.echo(f"Update command for {component}:")
+    click.echo(f"  {cmd}")
+    click.echo("\nRun this command to perform the update.")
+
+
+@db.command("remove")
+@click.option("--db-dir", required=True, type=click.Path(), help="Root database directory.")
+@click.option("--component", required=True, help="Component to remove.")
+@click.option("--no-backup", is_flag=True, default=False, help="Skip backup before removal.")
+@click.option("--yes", is_flag=True, default=False, help="Skip confirmation prompt.")
+def db_remove(db_dir, component, no_backup, yes):
+    """Remove a database component."""
+    from db_lifecycle import DBLifecycleManager
+
+    if not yes:
+        click.confirm(
+            f"Remove component '{component}'? This cannot be undone "
+            f"{'(no backup)' if no_backup else '(backup will be created)'}.",
+            abort=True,
+        )
+
+    mgr = DBLifecycleManager(Path(db_dir))
+    mgr.remove_component(component, backup=not no_backup)
+    click.echo(f"Component '{component}' removed.")
+
+
+@db.command("cleanup-backups")
+@click.option("--db-dir", required=True, type=click.Path(), help="Root database directory.")
+@click.option("--max-age-days", default=30, type=int, help="Max backup age in days. Default: 30.")
+def db_cleanup_backups(db_dir, max_age_days):
+    """Remove old database backups."""
+    from db_lifecycle import DBLifecycleManager
+
+    mgr = DBLifecycleManager(Path(db_dir))
+    removed = mgr.cleanup_backups(max_age_days=max_age_days)
+
+    if not removed:
+        click.echo("No old backups to clean up.")
+    else:
+        click.echo(f"Removed {len(removed)} old backup(s):")
+        for p in removed:
+            click.echo(f"  - {p.name}")
+
+
+@db.command("disk-usage")
+@click.option("--db-dir", required=True, type=click.Path(), help="Root database directory.")
+def db_disk_usage(db_dir):
+    """Show database disk usage."""
+    from db_lifecycle import DBLifecycleManager
+
+    mgr = DBLifecycleManager(Path(db_dir))
+    usage = mgr.get_disk_usage()
+
+    click.echo(f"Total: {usage['total_gb']:.2f} GB")
+    click.echo(f"Backups: {usage['backups_gb']:.2f} GB")
+    click.echo()
+    click.echo(f"{'Component':<25} {'Size (GB)':<12}")
+    click.echo("-" * 37)
+
+    for comp, size in sorted(usage["per_component"].items()):
+        click.echo(f"{comp:<25} {size:.4f}")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
