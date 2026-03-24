@@ -196,7 +196,7 @@ workflow {
         file("${params.db_dir ?: 'databases'}/genomad_db", checkIfExists: true)
     )
     ch_diamond_db = Channel.value(
-        file("${params.db_dir ?: 'databases'}/viral_protein/viral_protein.dmnd", checkIfExists: true)
+        file("${params.db_dir ?: 'databases'}/viral_protein/uniref90_viral.dmnd", checkIfExists: true)
     )
 
     DETECTION( ASSEMBLY.out.contigs, ch_genomad_db, ch_diamond_db )
