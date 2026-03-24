@@ -28,6 +28,7 @@ include { REPORTING      } from './subworkflows/reporting'
 params.reads      = null          // FASTQ files or directory path
 params.host       = 'human'      // Host genome: human, mouse, insect, none
 params.outdir     = './results'   // Output directory
+params.trimmer    = 'bbduk'      // bbduk or fastp
 params.assembler  = 'megahit'    // megahit or metaspades
 params.search     = 'sensitive'  // fast or sensitive
 params.skip_ml    = false        // Skip ML-based virus detection
@@ -57,6 +58,10 @@ def helpMessage() {
 
         --outdir      Output directory
                       [default: ${params.outdir}]
+
+        --trimmer     Read trimming/QC tool to use
+                      Options: bbduk, fastp
+                      [default: ${params.trimmer}]
 
         --assembler   De novo assembler to use
                       Options: megahit, metaspades
@@ -103,6 +108,11 @@ if (!params.reads) {
     exit 1
 }
 
+if (!(params.trimmer in ['bbduk', 'fastp'])) {
+    log.error "ERROR: --trimmer must be 'bbduk' or 'fastp'. Got: '${params.trimmer}'"
+    exit 1
+}
+
 if (!(params.assembler in ['megahit', 'metaspades'])) {
     log.error "ERROR: --assembler must be 'megahit' or 'metaspades'. Got: '${params.assembler}'"
     exit 1
@@ -130,6 +140,7 @@ log.info """
 =========================================================
  reads      : ${params.reads}
  host       : ${params.host}
+ trimmer    : ${params.trimmer}
  assembler  : ${params.assembler}
  search     : ${params.search}
  skip_ml    : ${params.skip_ml}

@@ -1,15 +1,16 @@
 # @TASK T0.2 - QC module container
 # @SPEC docs/planning/02-trd.md#2.2-분석-도구
 # Container: deepinvirus/qc:1.0.0
-# Tools: fastp (>=0.23), minimap2 (>=2.26), samtools (>=1.18)
+# Tools: fastp (>=0.23), minimap2 (>=2.26), samtools (>=1.18), bbmap (>=39.0)
 
 FROM condaforge/mambaforge:latest
 
 LABEL maintainer="DeepInvirus Team"
-LABEL description="QC module: fastp + minimap2 + samtools"
+LABEL description="QC module: fastp + bbmap (bbduk) + minimap2 + samtools"
 LABEL version="1.0.0"
 LABEL org.opencontainers.image.source="https://github.com/deepinvirus/deepinvirus"
 LABEL tools.fastp.version=">=0.23"
+LABEL tools.bbmap.version=">=39.0"
 LABEL tools.minimap2.version=">=2.26"
 LABEL tools.samtools.version=">=1.18"
 
@@ -17,6 +18,7 @@ LABEL tools.samtools.version=">=1.18"
 RUN mamba install -y -n base \
         -c bioconda -c conda-forge \
         fastp>=0.23 \
+        bbmap>=39.0 \
         minimap2>=2.26 \
         samtools>=1.18 \
     && mamba clean -afy \
@@ -27,6 +29,7 @@ RUN mamba install -y -n base \
 
 # Verify installations
 RUN fastp --version 2>&1 && \
+    bbduk.sh --version 2>&1 || true && \
     minimap2 --version && \
     samtools --version | head -n 1
 
