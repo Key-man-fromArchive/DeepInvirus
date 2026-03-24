@@ -518,6 +518,77 @@ def build_search_rows(bigtable: pd.DataFrame) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+def build_coverage_data(
+    bigtable: pd.DataFrame,
+    coverage_data: dict[str, pd.DataFrame],
+) -> dict[str, Any]:
+    """Build per-sample coverage data for the dashboard coverage tab.
+
+    Returns a dict with keys:
+        contigs: list of contig IDs
+        families: list of family names
+        lengths: list of contig lengths
+        samples: list of sample names
+        z: 2D list of log10(coverage + 1) values
+        raw_values: 2D list of raw coverage values
+        labels: list of "family (contig)" labels for heatmap y-axis
+    """
+    if bigtable.empty or not coverage_data:
+        return {
+            "contigs": [], "families": [], "lengths": [], "samples": [],
+            "z": [], "raw_values": [], "labels": [],
+        }
+
+    viral_contigs = bigtable["seq_id"].tolist()
+    families = bigtable.set_index("seq_id")["family"].to_dict() if "family" in bigtable.columns else {}
+    lengths = bigtable.set_index("seq_id")["length"].to_dict() if "length" in bigtable.columns else {}
+
+    sample_names = sorted(coverage_data.keys())
+
+    # Build coverage matrix: contigs x samples
+    rows = []
+    for contig in viral_contigs:
+        row = []
+        for sample in sample_names:
+            cov_df = coverage_data.get(sample, pd.DataFrame())
+            if not cov_df.empty and "Contig" in cov_df.columns:
+                match = cov_df[cov_df["Contig"] == contig]
+                if not match.empty:
+                    row.append(_safe_float(match.iloc[0].get("mean_coverage", 0)))
+                else:
+                    row.append(0.0)
+            else:
+                row.append(0.0)
+        rows.append(row)
+
+    # Sort by max coverage descending
+    max_covs = [max(row) if row else 0 for row in rows]
+    sorted_indices = sorted(range(len(viral_contigs)), key=lambda i: max_covs[i], reverse=True)
+
+    sorted_contigs = [viral_contigs[i] for i in sorted_indices]
+    sorted_families = [families.get(viral_contigs[i], "Unknown") for i in sorted_indices]
+    sorted_lengths = [int(lengths.get(viral_contigs[i], 0)) for i in sorted_indices]
+    sorted_rows = [rows[i] for i in sorted_indices]
+
+    # Log transform for heatmap
+    z = []
+    for row in sorted_rows:
+        z.append([round(float(np.log10(v + 1)), 3) for v in row])
+
+    # Labels for y-axis
+    labels = [f"{f} ({c})" for f, c in zip(sorted_families, sorted_contigs)]
+
+    return {
+        "contigs": sorted_contigs,
+        "families": sorted_families,
+        "lengths": sorted_lengths,
+        "samples": sample_names,
+        "z": z,
+        "raw_values": [[round(v, 2) for v in row] for row in sorted_rows],
+        "labels": labels,
+    }
+
+
 def build_dashboard_data(
     bigtable: pd.DataFrame,
     matrix: pd.DataFrame,
@@ -525,6 +596,7 @@ def build_dashboard_data(
     beta: pd.DataFrame,
     pcoa: pd.DataFrame,
     host_stats: pd.DataFrame | None = None,
+    coverage_data: dict[str, pd.DataFrame] | None = None,
 ) -> dict[str, Any]:
     """Assemble the full data dict injected as ``window.__DASHBOARD_DATA__``.
 
@@ -533,23 +605,100 @@ def build_dashboard_data(
     host_stats:
         Optional host removal stats DataFrame (from parse_host_removal.py).
         If provided, host removal data is included in the dashboard.
+    coverage_data:
+        Optional dict mapping sample name -> coverage DataFrame.
+        If provided, per-sample coverage data is included.
     """
+    # Fix n_samples: use coverage data or host stats for actual sample count
+    summary = build_summary(bigtable, matrix)
+    actual_samples = []
+    if coverage_data:
+        actual_samples = sorted(coverage_data.keys())
+    elif host_stats is not None and not host_stats.empty and "sample" in host_stats.columns:
+        actual_samples = host_stats["sample"].tolist()
+    if actual_samples:
+        summary["n_samples"] = len(actual_samples)
+        summary["sample_names"] = actual_samples
+
     data = {
-        "summary": build_summary(bigtable, matrix),
+        "summary": summary,
         "sankey": build_sankey(bigtable),
         "heatmap": build_heatmap(matrix),
         "barplot": build_barplot(matrix),
         "pcoa": build_pcoa_data(pcoa, beta),
         "alpha": build_alpha_data(alpha),
         "search_rows": build_search_rows(bigtable),
-        "samples": list(bigtable["sample"].dropna().unique()) if not bigtable.empty and "sample" in bigtable.columns else [],
+        "samples": actual_samples if actual_samples else (
+            list(bigtable["sample"].dropna().unique())
+            if not bigtable.empty and "sample" in bigtable.columns else []
+        ),
     }
     # @TASK T1.2 - Host removal statistics in dashboard
     if host_stats is not None:
         data["host_removal"] = build_host_removal_data(host_stats)
     else:
         data["host_removal"] = build_host_removal_data(pd.DataFrame())
+
+    # Per-sample coverage data
+    if coverage_data:
+        data["coverage"] = build_coverage_data(bigtable, coverage_data)
+    else:
+        data["coverage"] = {
+            "contigs": [], "families": [], "lengths": [], "samples": [],
+            "z": [], "raw_values": [], "labels": [],
+        }
+
     return data
+
+
+def load_coverage_files(coverage_dir: Path) -> dict[str, pd.DataFrame]:
+    """Load all *_coverage.tsv files from coverage directory.
+
+    Returns a dict mapping sample name -> DataFrame with columns:
+        Contig, mean_coverage, trimmed_mean, covered_bases, length
+    """
+    result = {}
+    if not coverage_dir or not coverage_dir.exists():
+        return result
+
+    for f in sorted(coverage_dir.glob("*_coverage.tsv")):
+        sample_name = f.stem.replace("_coverage", "")
+        try:
+            df = pd.read_csv(f, sep="\t")
+            cols = df.columns.tolist()
+            rename_map = {cols[0]: "Contig"}
+            if len(cols) > 1:
+                rename_map[cols[1]] = "mean_coverage"
+            if len(cols) > 2:
+                rename_map[cols[2]] = "trimmed_mean"
+            if len(cols) > 3:
+                rename_map[cols[3]] = "covered_bases"
+            if len(cols) > 4:
+                rename_map[cols[4]] = "length"
+            df = df.rename(columns=rename_map)
+            result[sample_name] = df
+            logger.info("Loaded coverage for sample '%s': %d contigs", sample_name, len(df))
+        except Exception as exc:
+            logger.warning("Failed to load coverage from %s: %s", f, exc)
+
+    return result
+
+
+def load_host_stats_dir(host_stats_dir: Path) -> pd.DataFrame:
+    """Load all *.host_removal_stats.txt files and merge."""
+    rows = []
+    if not host_stats_dir or not host_stats_dir.exists():
+        return pd.DataFrame()
+
+    for f in sorted(host_stats_dir.glob("*.host_removal_stats.txt")):
+        try:
+            df = pd.read_csv(f, sep="\t")
+            if not df.empty:
+                rows.append(df)
+        except Exception as exc:
+            logger.warning("Failed to load host stats from %s: %s", f, exc)
+
+    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
 
 
 def render_dashboard(
@@ -659,6 +808,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Path to host_removal_stats.tsv (from parse_host_removal.py)",
     )
     parser.add_argument(
+        "--coverage-dir",
+        metavar="DIR",
+        default=None,
+        help="Directory containing per-sample *_coverage.tsv files",
+    )
+    parser.add_argument(
+        "--host-stats-dir",
+        metavar="DIR",
+        default=None,
+        help="Directory containing *.host_removal_stats.txt files",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
@@ -690,7 +851,11 @@ def main(argv: list[str] | None = None) -> int:
 
         # Load host removal stats if provided
         host_stats = None
-        if args.host_stats:
+        if args.host_stats_dir:
+            host_stats = load_host_stats_dir(Path(args.host_stats_dir))
+            if not host_stats.empty:
+                logger.info("Loaded host removal stats from dir: %d samples", len(host_stats))
+        if (host_stats is None or host_stats.empty) and args.host_stats:
             host_path = Path(args.host_stats)
             if host_path.exists():
                 host_stats = pd.read_csv(host_path, sep="\t")
@@ -698,7 +863,14 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 logger.warning("Host stats file not found: %s", host_path)
 
-        data = build_dashboard_data(bigtable, matrix, alpha, beta, pcoa, host_stats)
+        # Load per-sample coverage data
+        coverage_data = None
+        if args.coverage_dir:
+            coverage_data = load_coverage_files(Path(args.coverage_dir))
+            if coverage_data:
+                logger.info("Loaded coverage for %d samples", len(coverage_data))
+
+        data = build_dashboard_data(bigtable, matrix, alpha, beta, pcoa, host_stats, coverage_data)
         render_dashboard(data, Path(args.output))
     except Exception:
         logger.exception("Dashboard generation failed")

@@ -10,8 +10,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DeepInvirus Dashboard</title>
 
-  <!-- Plotly.js CDN – the ONLY external dependency allowed -->
+  <!-- Plotly.js CDN – the ONLY external dependency -->
+  <!-- Offline fallback: if CDN fails, charts show static data tables instead -->
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
+  <script>
+    // Offline detection: if Plotly failed to load from CDN
+    window.__PLOTLY_LOADED__ = (typeof Plotly !== 'undefined');
+  </script>
 
   <style>
     /* ------------------------------------------------------------------ */
@@ -276,6 +281,12 @@
   </div>
 </header>
 
+<!-- Offline warning banner (hidden by default, shown via JS if Plotly not loaded) -->
+<div id="offline-banner" style="display:none;background:#FFF3CD;border-bottom:2px solid #FFC107;padding:12px 24px;font-size:13px;color:#856404;">
+  <strong>Offline mode:</strong> Plotly.js CDN could not be loaded. Interactive charts are unavailable.
+  Data tables are shown below instead. To view interactive charts, connect to the internet and reload this page.
+</div>
+
 <!-- ====================================================================== -->
 <!-- Tab bar                                                                 -->
 <!-- ====================================================================== -->
@@ -284,6 +295,8 @@
           aria-controls="tab-overview"   onclick="switchTab('tab-overview', this)">Overview</button>
   <button class="tab-btn" role="tab" aria-selected="false"
           aria-controls="tab-composition" onclick="switchTab('tab-composition', this)">Composition</button>
+  <button class="tab-btn" role="tab" aria-selected="false"
+          aria-controls="tab-coverage"   onclick="switchTab('tab-coverage', this)">Coverage</button>
   <button class="tab-btn" role="tab" aria-selected="false"
           aria-controls="tab-diversity"  onclick="switchTab('tab-diversity', this)">Diversity</button>
   <button class="tab-btn" role="tab" aria-selected="false"
@@ -352,6 +365,41 @@
         <h3>Relative Abundance (Stacked Barplot)</h3>
         <div id="barplot-plot" class="plotly-div"></div>
       </div>
+    </div>
+
+  </section>
+
+  <!-- -------------------------------------------------------------------- -->
+  <!-- TAB: Coverage (per-sample viral contig coverage)                       -->
+  <!-- -------------------------------------------------------------------- -->
+  <section id="tab-coverage" class="tab-panel" role="tabpanel">
+
+    <h2 class="section-title">Per-sample Viral Contig Coverage</h2>
+    <p style="margin-bottom:16px;color:var(--color-neutral);font-size:13px;">
+      Mean coverage depth of each viral contig in each sample. High coverage indicates abundant virus presence.
+    </p>
+
+    <div class="plot-row single">
+      <div class="plot-card">
+        <h3>Coverage Heatmap (Contig x Sample) - log10(mean coverage + 1)</h3>
+        <div id="coverage-heatmap-plot" class="plotly-div" style="min-height:600px"></div>
+      </div>
+    </div>
+
+    <!-- Host removal comparison -->
+    <div class="plot-row single">
+      <div class="plot-card">
+        <h3>Host Mapping Rate Comparison</h3>
+        <div id="host-removal-plot" class="plotly-div" style="min-height:400px"></div>
+      </div>
+    </div>
+
+    <!-- Coverage data table -->
+    <div class="table-wrapper" style="margin-top:20px;">
+      <table class="data-table" id="coverage-table" aria-label="Per-sample coverage">
+        <thead id="coverage-thead"></thead>
+        <tbody id="coverage-tbody"></tbody>
+      </table>
     </div>
 
   </section>
@@ -433,7 +481,7 @@
    window.__DASHBOARD_DATA__ – all chart data injected at render time.
    Structure mirrors the Python dataclasses in generate_dashboard.py.
    ------------------------------------------------------------------------- */
-window.__DASHBOARD_DATA__ = {{ data | tojson }};
+window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
 </script>
 
 <!-- ====================================================================== -->
@@ -471,6 +519,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson }};
       _chartsRendered[panelId] = true;
       if (panelId === "tab-overview")     { renderSankey(); }
       if (panelId === "tab-composition")  { renderHeatmap(); renderBarplot(); }
+      if (panelId === "tab-coverage")     { renderCoverageHeatmap(); }
       if (panelId === "tab-diversity")    { renderPCoA(); renderAlpha(); }
       if (panelId === "tab-search")       { renderSearchTable(); }
     }
@@ -778,10 +827,145 @@ window.__DASHBOARD_DATA__ = {{ data | tojson }};
   };
 
   /* ---------------------------------------------------------------------- */
+  /* Coverage: per-sample heatmap and table                                   */
+  /* ---------------------------------------------------------------------- */
+  function renderCoverageHeatmap() {
+    var cd = D.coverage;
+    if (!cd || !cd.contigs || cd.contigs.length === 0) {
+      document.getElementById("coverage-heatmap-plot").innerHTML =
+        "<p style='padding:20px;color:#7f7f7f'>No per-sample coverage data available. " +
+        "Provide --coverage-dir when generating the dashboard.</p>";
+      renderCoverageTable();
+      renderHostRemoval();
+      return;
+    }
+
+    // Build heatmap: rows=contigs, cols=samples
+    var z = cd.z;  // log10(coverage+1) matrix
+    var trace = {
+      type: "heatmap",
+      z: z,
+      x: cd.samples,
+      y: cd.labels,
+      colorscale: "YlOrRd",
+      colorbar: { title: { text: "log10(cov+1)", side: "right" } },
+      hovertemplate: "Contig: %{y}<br>Sample: %{x}<br>log10(cov+1): %{z:.2f}<extra></extra>"
+    };
+
+    var layout = Object.assign(baseLayout("Per-sample Viral Contig Coverage"), {
+      xaxis: { title: "Sample", tickangle: 0 },
+      yaxis: { title: "", automargin: true, tickfont: { size: 9 } },
+      margin: { t: 50, r: 120, b: 60, l: 250 }
+    });
+
+    if (typeof Plotly !== 'undefined') {
+      Plotly.newPlot("coverage-heatmap-plot", [trace], layout, PLOTLY_CONFIG);
+    }
+
+    renderCoverageTable();
+    renderHostRemoval();
+  }
+
+  function renderCoverageTable() {
+    var cd = D.coverage;
+    if (!cd || !cd.contigs || cd.contigs.length === 0) return;
+
+    var thead = document.getElementById("coverage-thead");
+    var tbody = document.getElementById("coverage-tbody");
+    if (!thead || !tbody) return;
+
+    // Header
+    var headerHtml = "<tr><th>Contig</th><th>Family</th><th>Length</th>";
+    cd.samples.forEach(function(s) { headerHtml += "<th>" + _esc(s) + " Cov</th>"; });
+    headerHtml += "</tr>";
+    thead.innerHTML = headerHtml;
+
+    // Body - top 30
+    tbody.innerHTML = "";
+    var limit = Math.min(cd.contigs.length, 30);
+    for (var i = 0; i < limit; i++) {
+      var tr = document.createElement("tr");
+      var html = "<td>" + _esc(cd.contigs[i]) + "</td>" +
+                 "<td>" + _esc(cd.families[i]) + "</td>" +
+                 "<td>" + cd.lengths[i] + "</td>";
+      cd.samples.forEach(function(s, j) {
+        var val = cd.raw_values[i][j];
+        var formatted = val >= 1000 ? val.toFixed(0) : (val >= 1 ? val.toFixed(1) : (val > 0 ? val.toFixed(2) : "0"));
+        html += "<td>" + formatted + "</td>";
+      });
+      tr.innerHTML = html;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function renderHostRemoval() {
+    var hr = D.host_removal;
+    if (!hr || !hr.samples || hr.samples.length === 0) {
+      document.getElementById("host-removal-plot").innerHTML =
+        "<p style='padding:20px;color:#7f7f7f'>No host removal data available.</p>";
+      return;
+    }
+
+    var hostTrace = {
+      type: "bar",
+      name: "Host RNA (%)",
+      x: hr.samples,
+      y: hr.host_pct,
+      marker: { color: "#BDBDBD" },
+      hovertemplate: "%{x}: %{y:.1f}% host<extra></extra>"
+    };
+
+    var nonhostPct = hr.host_pct.map(function(v) { return 100.0 - v; });
+    var nonhostTrace = {
+      type: "bar",
+      name: "Non-host (%)",
+      x: hr.samples,
+      y: nonhostPct,
+      marker: { color: "#1F77B4" },
+      hovertemplate: "%{x}: %{y:.1f}% non-host<extra></extra>"
+    };
+
+    var layout = Object.assign(baseLayout("Host Mapping Rate Comparison"), {
+      barmode: "stack",
+      xaxis: { title: "Sample" },
+      yaxis: { title: "Proportion (%)", range: [0, 105] },
+      legend: { orientation: "h", y: -0.15 }
+    });
+
+    if (typeof Plotly !== 'undefined') {
+      Plotly.newPlot("host-removal-plot", [hostTrace, nonhostTrace], layout, PLOTLY_CONFIG);
+    }
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Offline fallback: show data tables instead of charts                    */
+  /* ---------------------------------------------------------------------- */
+  function showOfflineFallback() {
+    var banner = document.getElementById("offline-banner");
+    if (banner) banner.style.display = "block";
+
+    // Replace each plot div with a message
+    var plotDivs = document.querySelectorAll(".plotly-div");
+    plotDivs.forEach(function(div) {
+      if (!div.innerHTML.trim()) {
+        div.innerHTML = "<p style='padding:20px;color:#856404;background:#FFF3CD;border-radius:4px;'>" +
+          "Interactive chart unavailable (offline). Data is accessible via the Search and Coverage tabs.</p>";
+      }
+    });
+  }
+
+  /* ---------------------------------------------------------------------- */
   /* Initial render: Overview tab                                             */
   /* ---------------------------------------------------------------------- */
+  // Check offline status
+  if (typeof Plotly === 'undefined') {
+    showOfflineFallback();
+  }
+
   _chartsRendered["tab-overview"] = true;
-  renderSankey();
+  if (typeof Plotly !== 'undefined') {
+    renderSankey();
+  }
 
   // Pre-populate search rows in background
   if (D.search_rows) { _tableRows = D.search_rows; }
