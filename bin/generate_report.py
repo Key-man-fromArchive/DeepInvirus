@@ -343,6 +343,166 @@ def _load_bbduk_stats(qc_dir: Path) -> list[dict]:
     return results
 
 
+def _pick_first_nonempty(values: pd.Series, default: str = "") -> str:
+    """Return the first non-empty string-like value from a Series."""
+    for value in values:
+        if pd.isna(value):
+            continue
+        text = str(value).strip()
+        if text and text.lower() != "nan":
+            return text
+    return default
+
+
+def _infer_classification_path(bigtable_path: Path) -> Path | None:
+    """Infer coassembly_classified.tsv from a taxonomy/bigtable.tsv path."""
+    bigtable_path = Path(bigtable_path)
+    candidate = (
+        bigtable_path.parent.parent / "classification" / "integration" / "coassembly_classified.tsv"
+    )
+    if candidate.exists():
+        return candidate
+    return None
+
+
+def _load_classification_results(bigtable_path: Path) -> pd.DataFrame:
+    """Load contig-level evidence integration results if present."""
+    classified_path = _infer_classification_path(bigtable_path)
+    if classified_path is None:
+        logger.warning("Classification results not found adjacent to %s", bigtable_path)
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_csv(classified_path, sep="\t")
+        logger.info("Loaded classification results from %s (%d rows)", classified_path, len(df))
+        return df
+    except Exception as exc:
+        logger.warning("Failed to load classification results from %s: %s", classified_path, exc)
+        return pd.DataFrame()
+
+
+def _build_top_species_summary(bigtable: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
+    """Summarize RPM by species when available, otherwise by genus."""
+    required = {"seq_id", "sample", "rpm"}
+    if bigtable.empty or not required.issubset(bigtable.columns):
+        return pd.DataFrame()
+
+    bt = bigtable.copy()
+    bt["rpm"] = pd.to_numeric(bt["rpm"], errors="coerce").fillna(0)
+    for col in ["species", "genus", "family"]:
+        if col not in bt.columns:
+            bt[col] = ""
+        bt[col] = bt[col].fillna("").astype(str).str.strip()
+
+    bt["group_key"] = np.where(
+        bt["species"].ne(""),
+        "species::" + bt["species"],
+        np.where(
+            bt["genus"].ne(""),
+            "genus::" + bt["genus"],
+            np.where(bt["family"].ne(""), "family::" + bt["family"], "unclassified::Unclassified"),
+        ),
+    )
+    bt["group_species"] = np.where(
+        bt["species"].ne(""),
+        bt["species"],
+        np.where(
+            bt["genus"].ne(""),
+            bt["genus"] + " (genus-level)",
+            np.where(bt["family"].ne(""), bt["family"] + " (family-level)", "Unclassified"),
+        ),
+    )
+
+    summary = (
+        bt.groupby("group_key", dropna=False)
+        .apply(
+            lambda df: pd.Series(
+                {
+                    "Species": _pick_first_nonempty(df["group_species"], "Unclassified"),
+                    "Genus": _pick_first_nonempty(df["genus"], "Unclassified"),
+                    "Family": _pick_first_nonempty(df["family"], "Unclassified"),
+                    "Total RPM": df["rpm"].sum(),
+                    "N Contigs": df["seq_id"].nunique(),
+                    "N Samples detected": df.loc[df["rpm"] > 0, "sample"].nunique(),
+                }
+            )
+        )
+        .reset_index(drop=True)
+    )
+
+    if summary.empty:
+        return summary
+
+    summary = summary.sort_values(["Total RPM", "N Contigs"], ascending=[False, False]).head(top_n)
+    summary["Total RPM"] = summary["Total RPM"].map(lambda x: f"{x:,.2f}")
+    return summary.reset_index(drop=True)
+
+
+def _build_evidence_summary_table(classified_df: pd.DataFrame) -> pd.DataFrame:
+    """Build summary counts for 4-tier evidence integration classes."""
+    if classified_df.empty or "classification" not in classified_df.columns:
+        return pd.DataFrame()
+
+    ordered = ["strong_viral", "novel_viral_candidate", "ambiguous", "unknown"]
+    counts = classified_df["classification"].fillna("unknown").value_counts()
+    return pd.DataFrame(
+        {
+            "Classification": ordered,
+            "Contig Count": [int(counts.get(name, 0)) for name in ordered],
+        }
+    )
+
+
+def _build_top_strong_viral_table(
+    classified_df: pd.DataFrame,
+    bigtable: pd.DataFrame,
+    top_n: int = 20,
+) -> pd.DataFrame:
+    """Build top strong_viral contig summary with taxonomy labels."""
+    required = {"seq_id", "classification", "classification_score", "best_support_tier"}
+    if classified_df.empty or not required.issubset(classified_df.columns):
+        return pd.DataFrame()
+
+    strong = classified_df[classified_df["classification"] == "strong_viral"].copy()
+    if strong.empty:
+        return pd.DataFrame()
+
+    tax_cols = [c for c in ["seq_id", "species", "genus", "family"] if c in bigtable.columns]
+    taxonomy = pd.DataFrame()
+    if tax_cols:
+        taxonomy = bigtable[tax_cols].drop_duplicates(subset=["seq_id"]).copy()
+        for col in ["species", "genus", "family"]:
+            if col not in taxonomy.columns:
+                taxonomy[col] = ""
+            taxonomy[col] = taxonomy[col].fillna("").astype(str).str.strip()
+        taxonomy["species_label"] = np.where(
+            taxonomy["species"].ne(""),
+            taxonomy["species"],
+            np.where(
+                taxonomy["genus"].ne(""),
+                taxonomy["genus"] + " (genus-level)",
+                np.where(taxonomy["family"].ne(""), taxonomy["family"] + " (family-level)", "Unclassified"),
+            ),
+        )
+
+    merged = strong.merge(
+        taxonomy[["seq_id", "species_label"]] if not taxonomy.empty else pd.DataFrame(columns=["seq_id", "species_label"]),
+        on="seq_id",
+        how="left",
+    )
+    merged["species_label"] = merged["species_label"].fillna("Unclassified")
+    merged["classification_score"] = pd.to_numeric(merged["classification_score"], errors="coerce").fillna(0)
+    merged = merged.sort_values(
+        ["classification_score", "best_support_tier", "seq_id"],
+        ascending=[False, True, True],
+    ).head(top_n)
+
+    result = merged[["seq_id", "species_label", "classification_score", "best_support_tier"]].copy()
+    result.columns = ["seq_id", "species", "evidence_score", "best_support_tier"]
+    result["evidence_score"] = result["evidence_score"].map(lambda x: f"{x:.2f}")
+    return result.reset_index(drop=True)
+
+
 def _build_per_sample_coverage_table(
     bigtable: pd.DataFrame,
     coverage_data: dict[str, pd.DataFrame] | None = None,
@@ -1127,6 +1287,7 @@ def generate_report(
     bigtable = pd.read_csv(bigtable_path, sep="\t")
     matrix = pd.read_csv(matrix_path, sep="\t")
     alpha = pd.read_csv(alpha_path, sep="\t")
+    classified_df = _load_classification_results(bigtable_path)
 
     pcoa = pd.DataFrame()
     try:
@@ -1184,6 +1345,9 @@ def generate_report(
     # Build per-sample coverage comparison table
     # ------------------------------------------------------------------
     cov_table = _build_per_sample_coverage_table(bigtable, coverage_data)
+    species_summary = _build_top_species_summary(bigtable, top_n=20)
+    evidence_summary = _build_evidence_summary_table(classified_df)
+    strong_viral_table = _build_top_strong_viral_table(classified_df, bigtable, top_n=20)
 
     # ------------------------------------------------------------------
     # @TASK B5 - Detect top virus automatically
@@ -1315,9 +1479,20 @@ def generate_report(
         "(2) Host RNA removal using minimap2; "
         "(3) Co-assembly using MEGAHIT; "
         "(4) Viral sequence detection using geNomad and Diamond BLASTx; "
-        "(5) Taxonomic classification using MMseqs2 and TaxonKit; "
-        "(6) Per-sample coverage quantification using CoverM; "
-        "(7) Diversity analysis using scipy and numpy."
+        "(5) Taxonomic classification using MMseqs2, followed by TaxonKit lineage "
+        "reformatting to harmonize family, genus, and species labels; "
+        "(6) Four-tier iterative evidence integration using Tier 1 amino acid search, "
+        "Tier 2 amino acid search, Tier 3 nucleotide search, and Tier 4 nucleotide search; "
+        "(7) Per-sample coverage quantification using CoverM; "
+        "(8) Diversity analysis using scipy and numpy."
+    )
+    builder.add_paragraph(
+        "Evidence integration results were classified as strong_viral, "
+        "novel_viral_candidate, ambiguous, cellular, or unknown according to the "
+        "combined support across geNomad, amino acid homology, and nucleotide homology. "
+        "In this report, summary tables focus on the contigs retained in the viral "
+        "bigtable and on the contig-level classification output from the 4-tier "
+        "integration stage."
     )
 
     if sample_names and len(sample_names) >= 2:
@@ -1338,6 +1513,7 @@ def generate_report(
                 "Assembler",
                 "Virus detection",
                 "Taxonomy",
+                "Evidence integration",
                 "Coverage",
                 "Diversity",
             ],
@@ -1346,7 +1522,8 @@ def generate_report(
                 "minimap2 (splice-aware mapping)",
                 "MEGAHIT (co-assembly)",
                 "geNomad + Diamond BLASTx",
-                "MMseqs2 + TaxonKit",
+                "MMseqs2 + TaxonKit lineage reformatting",
+                "Tier 1 AA -> Tier 2 AA -> Tier 3 NT -> Tier 4 NT",
                 "CoverM (mean, trimmed mean, covered bases)",
                 "scipy + numpy (Shannon, Simpson, Bray-Curtis)",
             ],
@@ -1464,6 +1641,31 @@ def generate_report(
         builder.add_figure(family_fig_path,
                          caption=f"Figure {fig_counter}. Virus family composition (by contig count).",
                          width_inches=6.0)
+
+    builder.add_heading("4.3 Top Viral Species", level=2)
+    if not species_summary.empty:
+        table_counter += 1
+        builder.add_table(species_summary, title=f"Table {table_counter}. Top Viral Species by Total RPM")
+    else:
+        builder.add_paragraph("Species/genus summary could not be generated from the bigtable.")
+
+    builder.add_heading("4.4 Evidence Integration Summary", level=2)
+    builder.add_paragraph(
+        "Contigs were evaluated using the iterative 4-tier evidence integration workflow: "
+        "Tier 1 AA, Tier 2 AA, Tier 3 NT, and Tier 4 NT. The contig-level results below "
+        "summarize the final evidence classes from the integration output."
+    )
+    if not evidence_summary.empty:
+        table_counter += 1
+        builder.add_table(evidence_summary, title=f"Table {table_counter}. Evidence Integration Classification Summary")
+    else:
+        builder.add_paragraph("Evidence integration classification output was not found.")
+
+    if not strong_viral_table.empty:
+        table_counter += 1
+        builder.add_table(strong_viral_table, title=f"Table {table_counter}. Top strong_viral Contigs")
+    elif not classified_df.empty:
+        builder.add_paragraph("No strong_viral contigs were present in the classification output.")
 
     # ================================================================
     # 5. Per-sample Coverage Analysis
@@ -1752,6 +1954,7 @@ def generate_report(
             "detection_confidence", "rpm", "count",
             "taxid", "domain", "phylum", "class", "order",
             "genus", "species",
+            "evidence_classification", "evidence_score", "evidence_support_tier",
             "ictv_classification", "baltimore_group",
         ],
         "Type": [
@@ -1761,6 +1964,7 @@ def generate_report(
             "string", "float", "integer",
             "integer", "string", "string", "string", "string",
             "string", "string",
+            "string", "float", "string",
             "string", "string",
         ],
         "Description": [
@@ -1782,6 +1986,9 @@ def generate_report(
             "Taxonomic order",
             "Taxonomic genus",
             "Taxonomic species",
+            "Final 4-tier evidence class assigned in the merged viral bigtable",
+            "Evidence integration score carried into the merged viral bigtable",
+            "Best supporting tier from evidence integration (e.g. aa1, genomad_only)",
             "ICTV official classification",
             "Baltimore classification group (e.g. Group I-VII)",
         ],
@@ -1821,6 +2028,7 @@ def generate_report(
         "Section": [
             "Executive Summary", "Methods", "QC Results",
             "Host Removal", "Virus Detection", "Coverage Analysis",
+            "Evidence Integration",
             "Taxonomic Analysis", "Diversity", "Conclusions", "Limitations",
         ],
         "Content": [
@@ -1830,6 +2038,7 @@ def generate_report(
             "Host mapping rates per sample (descriptive, no causal inference)",
             "Detection methods, family distribution, confidence tiers",
             "Per-sample heatmap (log10 RPKM), breadth-weighted top contigs",
+            "Top species/genus RPM summary and 4-tier evidence integration tables",
             "Family descriptions, VIRUS_ORIGIN evidence-tier classification",
             "Conditional: n≥3 full diversity, n=2 fold-change, n=1 profile",
             "Data-driven, scientifically hedged (no overclaiming)",
@@ -1837,7 +2046,7 @@ def generate_report(
         ],
         "Auto-generated": [
             "Yes", "Yes", "Yes", "Yes", "Yes",
-            "Yes", "Yes", "Yes (conditional)", "Yes", "Yes",
+            "Yes", "Yes", "Yes", "Yes (conditional)", "Yes", "Yes",
         ],
     })
     builder.add_table(report_sections, title="Table D4. Report Sections")
