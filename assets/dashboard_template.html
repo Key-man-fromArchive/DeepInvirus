@@ -1439,6 +1439,31 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     return ICTV_COLORS[familyName] || "#CCCCCC";
   }
 
+  function getEvidenceColor(classification) {
+    var key = String(classification || "unknown").toLowerCase();
+    if (key === "strong_viral") return "#2e8b57";
+    if (key === "novel_viral_candidate") return "#2563eb";
+    if (key === "ambiguous") return "#f59e0b";
+    if (key === "cellular") return "#dc2626";
+    return "#6b7280";
+  }
+
+  function formatEvidenceLabel(classification) {
+    if (!classification) return "Unknown";
+    return String(classification)
+      .split("_")
+      .map(function (part) {
+        return part ? part.charAt(0).toUpperCase() + part.slice(1) : "";
+      })
+      .join(" ");
+  }
+
+  function formatEvidenceScore(score) {
+    if (score == null || score === "") return "N/A";
+    var numeric = Number(score);
+    return Number.isFinite(numeric) ? numeric.toFixed(2) : String(score);
+  }
+
   function familyFromPath(path) {
     if (!path) return "Unclassified";
     var parts = String(path).split("/");
@@ -1622,6 +1647,8 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     var gc = computeGcPercent(sequence);
     var samples = D.samples || [];
     var familyColor = row.family_color || getFamilyColor(row.family);
+    var evidenceClassification = row.evidence_classification || "unknown";
+    var evidenceColor = getEvidenceColor(evidenceClassification);
 
     // Determine whether any sample has non-zero coverage for this contig
     var hasCoverage = samples.length > 0 && samples.some(function (s) {
@@ -1643,6 +1670,9 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         "<div class='modal-stat'><div class='modal-stat-label'>Family</div><div class='modal-stat-value'><span class='family-chip' style='--chip-color:" + _esc(familyColor) + "'>" + _esc(row.family || "Unclassified") + "</span></div></div>" +
         "<div class='modal-stat'><div class='modal-stat-label'>Genus</div><div class='modal-stat-value'>" + _esc(row.genus || "N/A") + "</div></div>" +
         "<div class='modal-stat'><div class='modal-stat-label'>Species</div><div class='modal-stat-value'>" + _esc(row.species || "N/A") + "</div></div>" +
+        "<div class='modal-stat'><div class='modal-stat-label'>Evidence Classification</div><div class='modal-stat-value'><span class='family-chip' style='--chip-color:" + _esc(evidenceColor) + "'>" + _esc(formatEvidenceLabel(evidenceClassification)) + "</span></div></div>" +
+        "<div class='modal-stat'><div class='modal-stat-label'>Evidence Score</div><div class='modal-stat-value'>" + _esc(formatEvidenceScore(row.evidence_score)) + "</div></div>" +
+        "<div class='modal-stat'><div class='modal-stat-label'>Evidence Support Tier</div><div class='modal-stat-value'>" + _esc(row.evidence_support_tier || "N/A") + "</div></div>" +
         "<div class='modal-stat'><div class='modal-stat-label'>Length</div><div class='modal-stat-value'>" + Number(row.length || 0) + " bp</div></div>" +
         "<div class='modal-stat'><div class='modal-stat-label'>GC Content</div><div class='modal-stat-value'>" + (gc == null ? "N/A" : gc.toFixed(2) + "%") + "</div></div>" +
         "<div class='modal-stat'><div class='modal-stat-label'>Detection</div><div class='modal-stat-value'>" + _esc(row.detection_method || "N/A") + " / " + _esc(row.detection_confidence || "N/A") + "</div></div>" +
