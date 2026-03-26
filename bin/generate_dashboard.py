@@ -246,7 +246,7 @@ def build_summary(bigtable: pd.DataFrame, matrix: pd.DataFrame) -> dict[str, Any
 
     n_sequences = bigtable["seq_id"].nunique()
 
-    # Top virus: highest mean RPM across samples from the matrix
+    # Top virus: most abundant taxon (genus or species with highest RPM)
     top_virus = "N/A"
     if not matrix.empty and "taxon" in matrix.columns:
         sample_cols = [c for c in matrix.columns if c not in ("taxon", "taxid", "rank")]
@@ -254,8 +254,20 @@ def build_summary(bigtable: pd.DataFrame, matrix: pd.DataFrame) -> dict[str, Any
             matrix_vals = matrix[sample_cols].apply(pd.to_numeric, errors="coerce")
             mean_rpm = matrix_vals.mean(axis=1)
             if not mean_rpm.empty:
-                top_idx = mean_rpm.idxmax()
-                top_virus = str(matrix.loc[top_idx, "taxon"])
+                # Skip "Unclassified" if possible
+                for idx in mean_rpm.sort_values(ascending=False).index:
+                    candidate = str(matrix.loc[idx, "taxon"])
+                    if candidate.lower() not in ("unclassified", "nan", ""):
+                        top_virus = candidate
+                        break
+                if top_virus == "N/A" and not mean_rpm.empty:
+                    top_virus = str(matrix.loc[mean_rpm.idxmax(), "taxon"])
+    # Fallback to most frequent genus in bigtable
+    if top_virus in ("N/A", "Unclassified") and "genus" in bigtable.columns:
+        genus_counts = bigtable["genus"].dropna().astype(str).str.strip()
+        genus_counts = genus_counts[genus_counts != ""].value_counts()
+        if not genus_counts.empty:
+            top_virus = genus_counts.index[0]
 
     n_methods = 0
     if "detection_method" in bigtable.columns:
@@ -746,19 +758,43 @@ def build_search_rows_v2(bigtable: pd.DataFrame) -> list[dict[str, Any]]:
                 "coverage": 0.0, "rpm": 0.0, "breadth": 0.0,
             })
 
+        # Build full taxonomy string from rank columns if taxonomy field is empty
+        taxonomy_str = _safe_str(row.get("taxonomy", ""))
+        if not taxonomy_str:
+            ranks_list = [_safe_str(row.get(r, "")) for r in
+                          ["domain", "phylum", "class", "order", "family", "genus", "species"]]
+            taxonomy_str = "; ".join(r for r in ranks_list if r)
+
+        # Use lineage family if geNomad family is Unclassified
+        family = _safe_str(row.get("family", ""))
+        if family in ("Unclassified", ""):
+            for r in ["family", "order", "class", "phylum"]:
+                val = _safe_str(row.get(r, ""))
+                if val and val != "Unclassified":
+                    family = val
+                    break
+
         entry: dict[str, Any] = {
             "seq_id": seq_id,
             "length": int(_safe_float(row.get("length", 0))),
-            "family": _safe_str(row.get("family", "")),
+            "family": family,
             "genus": _safe_str(row.get("genus", "")),
             "species": _safe_str(row.get("species", "")),
-            "family_color": get_family_color(row.get("family", "")),
+            "domain": _safe_str(row.get("domain", "")),
+            "phylum": _safe_str(row.get("phylum", "")),
+            "class": _safe_str(row.get("class", "")),
+            "order": _safe_str(row.get("order", "")),
+            "family_color": get_family_color(family),
             "detection_method": _safe_str(row.get("detection_method", "")),
             "detection_score": round(_safe_float(row.get("detection_score", 0)), 3),
             "detection_confidence": _safe_str(row.get("detection_confidence", "")),
-            "best_hit": _safe_str(row.get("target", "")),
+            "best_hit": _safe_str(row.get("subject_id", row.get("target", ""))),
             "pident": _safe_str(row.get("pident", "")),
-            "taxonomy": _safe_str(row.get("taxonomy", "")),
+            "taxonomy": taxonomy_str,
+            "taxid": _safe_str(row.get("taxid", "")),
+            "evidence_classification": _safe_str(row.get("evidence_classification", "")),
+            "evidence_score": _safe_str(row.get("evidence_score", "")),
+            "evidence_support_tier": _safe_str(row.get("evidence_support_tier", "")),
             "coverage_per_sample": coverage_per_sample,
         }
         rows.append(entry)
@@ -883,12 +919,13 @@ def build_comparison_data(bigtable: pd.DataFrame) -> dict[str, Any]:
     return {"family": family_data, "contig": contig_data, "samples": [str(s) for s in samples]}
 
 
-def load_contig_sequences(contigs_path: Path | None, bigtable: pd.DataFrame, top_n: int = 200) -> dict[str, str]:
-    """Load the top-N contig sequences ranked by total RPM from a FASTA file."""
+def load_contig_sequences(contigs_path: Path | None, bigtable: pd.DataFrame, top_n: int = 0) -> dict[str, str]:
+    """Load contig sequences from FASTA. top_n=0 means all contigs in bigtable."""
     if not contigs_path or not contigs_path.exists() or bigtable.empty or "seq_id" not in bigtable.columns:
         return {}
 
-    if "rpm" in bigtable.columns:
+    all_ids = bigtable["seq_id"].dropna().astype(str).unique().tolist()
+    if top_n > 0 and "rpm" in bigtable.columns:
         top_ids = (
             bigtable.groupby("seq_id", as_index=False)["rpm"]
             .sum()
@@ -897,10 +934,10 @@ def load_contig_sequences(contigs_path: Path | None, bigtable: pd.DataFrame, top
             .astype(str)
             .tolist()
         )
+    elif top_n > 0:
+        top_ids = all_ids[:top_n]
     else:
-        top_ids = (
-            bigtable["seq_id"].dropna().astype(str).drop_duplicates().head(top_n).tolist()
-        )
+        top_ids = all_ids
     top_id_set = set(top_ids)
     if not top_id_set:
         return {}
