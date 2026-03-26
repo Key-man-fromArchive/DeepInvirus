@@ -583,9 +583,9 @@
     <!-- Sankey diagram -->
     <h2 class="section-title">Taxonomic Hierarchy (Sankey)</h2>
     <div class="plot-card">
-      <h3>Domain → Family → Genus</h3>
+      <h3>Domain → Phylum → Class → Order → Family → Genus → Species</h3>
       <div class="chart-export-row" data-plot-target="sankey-plot"></div>
-      <div id="sankey-plot" class="plotly-div" style="min-height:500px"></div>
+      <div id="sankey-plot" class="plotly-div" style="min-height:800px"></div>
     </div>
 
   </section>
@@ -956,10 +956,15 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
       }
     };
 
-    var layout = Object.assign(baseLayout("Taxonomic Flow: Domain → Family → Genus"), {
-      margin: { t: 50, r: 20, b: 20, l: 20 }
+    var uniqueTargets = new Set(sd.targets || []);
+    var activeNodes = new Set([...(sd.sources || []), ...uniqueTargets]);
+    var dynamicHeight = Math.max(700, Math.min(3000, activeNodes.size * 28));
+    var layout = Object.assign(baseLayout("Taxonomic Flow: Domain → Phylum → ... → Species"), {
+      margin: { t: 50, r: 250, b: 20, l: 20 },
+      height: dynamicHeight
     });
 
+    document.getElementById("sankey-plot").style.minHeight = dynamicHeight + "px";
     Plotly.newPlot("sankey-plot", [trace], layout, PLOTLY_CONFIG);
   }
 
@@ -1017,9 +1022,15 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
             return "rgba(" + parseInt(m[1], 16) + "," + parseInt(m[2], 16) + "," + parseInt(m[3], 16) + ",0.25)";
           })
         }
-      }], Object.assign(baseLayout("Taxonomic Hierarchy — " + sampleLabel), {
-        margin: { t: 50, r: 20, b: 20, l: 20 }
-      }), PLOTLY_CONFIG);
+      }], (function() {
+        var at = new Set([...(sankeyData.sources || []), ...(sankeyData.targets || [])]);
+        var h = Math.max(700, Math.min(3000, at.size * 28));
+        chartDiv.style.minHeight = h + "px";
+        return Object.assign(baseLayout("Taxonomic Hierarchy — " + sampleLabel), {
+          margin: { t: 50, r: 250, b: 20, l: 20 },
+          height: h
+        });
+      })(), PLOTLY_CONFIG);
 
     } else if (_currentViz === "sunburst") {
       if (!treeData || !treeData.ids || treeData.ids.length === 0) {
@@ -1037,7 +1048,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         textinfo:     "label+percent entry",
         hovertemplate: "<b>%{label}</b><br>Path: %{customdata}<br>RPM: %{value:.1f}<br>%{percentEntry:.1%}<extra></extra>",
         insidetextorientation: "radial",
-        maxdepth: 2,
+        maxdepth: -1,
         textfont: { size: 14 },
         marker: { colors: treeData.colors || [] }
       }], Object.assign(baseLayout("Taxonomy Sunburst — " + sampleLabel), {
