@@ -348,13 +348,19 @@ workflow {
     )
 
     // --- Step 4: CLASSIFICATION (MMseqs2 + TaxonKit on co-assembly, CoverM per-sample) ---
+    // Pass evidence integration results to enrich bigtable with 4-tier classification
+    ch_evidence_classified = ITERATIVE_CLASSIFICATION.out.classified
+        .map { meta, f -> f }
+        .ifEmpty( file("${projectDir}/assets/NO_FILE") )
+
     CLASSIFICATION(
         ASSEMBLY.out.contigs,           // co-assembly contigs (single file)
         PREPROCESSING.out.filtered_reads, // per-sample reads for coverage mapping
         DETECTION.out.detected_seqs,    // detection results (coassembly)
         ch_sample_map,
         ch_ictv_vmr,
-        ch_mmseqs_db                    // MMseqs2 database directory
+        ch_mmseqs_db,                   // MMseqs2 database directory
+        ch_evidence_classified          // 4-tier evidence integration classified contigs
     )
 
     // --- Step 5: REPORTING (Dashboard + Report + MultiQC) ---

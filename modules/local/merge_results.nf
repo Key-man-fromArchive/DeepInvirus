@@ -12,6 +12,7 @@ process MERGE_RESULTS {
     path(detection_results)
     path(sample_map)
     path(ictv_vmr)
+    path(evidence_classified)
 
     output:
     path("bigtable.tsv"),              emit: bigtable
@@ -19,6 +20,7 @@ process MERGE_RESULTS {
     path("sample_counts.tsv"),         emit: counts
 
     script:
+    def ev_arg = evidence_classified.name != 'NO_FILE' ? "--evidence-classified ${evidence_classified}" : ''
     """
     merge_results.py \\
         --taxonomy ${taxonomies} \\
@@ -27,6 +29,7 @@ process MERGE_RESULTS {
         --detection ${detection_results} \\
         --sample-map ${sample_map} \\
         --ictv ${ictv_vmr} \\
+        ${ev_arg} \\
         --out-bigtable bigtable.tsv \\
         --out-matrix sample_taxon_matrix.tsv \\
         --out-counts sample_counts.tsv

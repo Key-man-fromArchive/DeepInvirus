@@ -19,6 +19,7 @@ workflow CLASSIFICATION {
     ch_sample_map      // path(sample_map.tsv)
     ch_ictv_vmr        // path(ictv_vmr.tsv)
     ch_mmseqs_db       // path(mmseqs_db) - MMseqs2 viral nucleotide DB directory
+    ch_evidence_classified  // path(evidence_classified.tsv) - 4-tier evidence integration
 
     main:
     // Step 1: Wrap co-assembly contigs with meta for module compatibility
@@ -42,7 +43,8 @@ workflow CLASSIFICATION {
         COVERM_PERSAMPLE.out.coverage.map{ meta, f -> f }.collect(),
         ch_detection.map{ meta, f -> f }.collect(),
         ch_sample_map,
-        ch_ictv_vmr
+        ch_ictv_vmr,
+        ch_evidence_classified
     )
 
     // Step 6: Diversity analysis from sample_taxon_matrix

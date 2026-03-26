@@ -73,6 +73,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--detection", nargs="+", type=Path, required=True)
     p.add_argument("--sample-map", type=Path, required=True)
     p.add_argument("--ictv", type=Path, required=True)
+    p.add_argument("--evidence-classified", type=Path, default=None,
+                   help="Evidence integration classified contigs TSV (optional).")
     p.add_argument("--out-bigtable", type=Path, required=True)
     p.add_argument("--out-matrix", type=Path, required=True)
     p.add_argument("--out-counts", type=Path, required=True)
@@ -400,6 +402,7 @@ def build_bigtable(
     ]
 
     # --- Final column selection ---
+    # NOTE: evidence_classification/score/support_tier are added post-hoc in main()
     output_cols = [
         "seq_id", "sample", "length", "detection_method", "detection_score",
         "taxonomy", "family", "coverage", "breadth", "detection_confidence", "rpm",
@@ -495,6 +498,27 @@ def main(argv: list[str] | None = None) -> int:
         print("WARNING: No detection results. Generating empty outputs.", file=sys.stderr)
 
     bigtable = build_bigtable(detection, taxonomy, coverage, lineage, sample_map, ictv)
+
+    # --- Merge evidence integration classification (optional) ---
+    if args.evidence_classified and args.evidence_classified.exists():
+        try:
+            ev = pd.read_csv(args.evidence_classified, sep="\t", dtype=str)
+            ev_cols = {"seq_id": "seq_id"}
+            if "classification" in ev.columns:
+                ev_cols["classification"] = "evidence_classification"
+            if "classification_score" in ev.columns:
+                ev_cols["classification_score"] = "evidence_score"
+            if "best_support_tier" in ev.columns:
+                ev_cols["best_support_tier"] = "evidence_support_tier"
+            if len(ev_cols) > 1:
+                ev_merge = ev[list(ev_cols.keys())].rename(columns=ev_cols)
+                ev_merge = ev_merge.drop_duplicates(subset=["seq_id"], keep="first")
+                bigtable = bigtable.merge(ev_merge, on="seq_id", how="left")
+                n_matched = bigtable["evidence_classification"].notna().sum()
+                print(f"Evidence integration: {n_matched} contigs classified", file=sys.stderr)
+        except Exception as e:
+            print(f"WARNING: Failed to load evidence classified: {e}", file=sys.stderr)
+
     matrix = build_sample_taxon_matrix(bigtable)
     counts = build_sample_counts(bigtable)
 
