@@ -310,6 +310,10 @@ workflow {
     }
     ch_taxonomy_nodes = Channel.value(nodes_file)
 
+    // Taxonomy directory for TaxonKit (contains names.dmp, nodes.dmp)
+    def taxonomy_dir = file("${db_base}/taxonomy")
+    ch_taxonomy_db = Channel.value(taxonomy_dir)
+
     // --- Step 1: PREPROCESSING ---
     PREPROCESSING( ch_reads, ch_host_genome )
 
@@ -360,7 +364,8 @@ workflow {
         ch_sample_map,
         ch_ictv_vmr,
         ch_mmseqs_db,                   // MMseqs2 database directory
-        ch_evidence_classified          // 4-tier evidence integration classified contigs
+        ch_evidence_classified,         // 4-tier evidence integration classified contigs
+        ch_taxonomy_db                  // NCBI taxonomy for TaxonKit lineage
     )
 
     // --- Step 5: REPORTING (Dashboard + Report + MultiQC) ---

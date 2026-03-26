@@ -20,6 +20,7 @@ workflow CLASSIFICATION {
     ch_ictv_vmr        // path(ictv_vmr.tsv)
     ch_mmseqs_db       // path(mmseqs_db) - MMseqs2 viral nucleotide DB directory
     ch_evidence_classified  // path(evidence_classified.tsv) - 4-tier evidence integration
+    ch_taxonomy_db     // path(taxonomy_dir) - NCBI taxonomy (names.dmp, nodes.dmp) for TaxonKit
 
     main:
     // Step 1: Wrap co-assembly contigs with meta for module compatibility
@@ -31,7 +32,7 @@ workflow CLASSIFICATION {
     MMSEQS_TAXONOMY( ch_contigs_meta, ch_mmseqs_db )
 
     // Step 3: Lineage reformatting with TaxonKit (runs once)
-    TAXONKIT_REFORMAT( MMSEQS_TAXONOMY.out.taxonomy )
+    TAXONKIT_REFORMAT( MMSEQS_TAXONOMY.out.taxonomy, ch_taxonomy_db )
 
     // Step 4: Per-sample read coverage (each sample's reads -> co-assembly contigs)
     COVERM_PERSAMPLE( ch_filtered_reads, ch_contigs.collect() )

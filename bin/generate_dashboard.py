@@ -634,7 +634,7 @@ def build_taxonomy_tree(bigtable: pd.DataFrame) -> dict[str, Any]:
     Each *tree_data* dict has Plotly-compatible arrays:
     ``ids``, ``labels``, ``parents``, ``values`` (RPM sum).
     """
-    ranks = ["domain", "phylum", "class", "order", "family", "genus", "species"]
+    all_ranks = ["domain", "phylum", "class", "order", "family", "genus", "species"]
 
     if bigtable.empty:
         empty = {"ids": [], "labels": [], "parents": [], "values": []}
@@ -647,23 +647,13 @@ def build_taxonomy_tree(bigtable: pd.DataFrame) -> dict[str, Any]:
         else bigtable
     )
 
-    has_genus = (
-        "genus" in bigtable.columns
-        and not bigtable["genus"].dropna().empty
-        and not bigtable["genus"].dropna().astype(str).str.strip().eq("").all()
-    )
-    if has_genus:
-        ranks.append("genus")
-    has_species = (
-        "species" in bigtable.columns
-        and not bigtable["species"].dropna().empty
-        and not bigtable["species"].dropna().astype(str).str.strip().eq("").all()
-    )
-    if has_species:
-        ranks.append("species")
-
-    # Filter to only ranks that actually exist in the DataFrame
-    available_ranks = [r for r in ranks if r in bigtable.columns]
+    # Filter to ranks that exist in DataFrame and have meaningful data
+    available_ranks = []
+    for r in all_ranks:
+        if r in bigtable.columns:
+            col = bigtable[r].dropna().astype(str).str.strip()
+            if not col.empty and not col.eq("").all():
+                available_ranks.append(r)
     if not available_ranks:
         empty = {"ids": [], "labels": [], "parents": [], "values": []}
         return {"all": empty, "per_sample": {}}
