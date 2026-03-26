@@ -305,10 +305,12 @@ def build_sankey(bigtable: pd.DataFrame) -> dict[str, Any]:
     # Use unique contigs only (bigtable has per-sample rows)
     unique_bt = bigtable.drop_duplicates(subset=["seq_id"]) if "seq_id" in bigtable.columns else bigtable
 
-    # Clean rank columns
+    # Clean rank columns; fill missing domain with "Viruses"
     bt_clean = unique_bt[ranks].copy()
     for c in ranks:
         bt_clean[c] = bt_clean[c].astype(str).str.strip().replace({"": pd.NA, "nan": pd.NA})
+    if "domain" in bt_clean.columns:
+        bt_clean["domain"] = bt_clean["domain"].fillna("Viruses")
 
     # Build unique nodes with rank prefix to avoid collision (e.g. "Unclassified" at multiple ranks)
     # node_key = "rank:name", display_label = "name"
@@ -614,21 +616,38 @@ def _build_sunburst_tree(bt: pd.DataFrame, ranks: list[str]) -> dict[str, Any]:
         rpm = _safe_float(row.get("rpm", 0)) if has_rpm else 1.0
         family_color = get_family_color(infer_family_name(row))
         path_parts: list[str] = []
-        for rank in ranks:
+        for i, rank in enumerate(ranks):
             val = str(row.get(rank, "")).strip()
-            if val and val.lower() != "nan" and val != "":
-                path_parts.append(val)
-                node_id = "/".join(path_parts)
-                parent_id = "/".join(path_parts[:-1]) if len(path_parts) > 1 else ""
-                node_values[node_id] = node_values.get(node_id, 0.0) + rpm
-                node_parent[node_id] = parent_id
-                node_colors[node_id] = family_color
+            if not val or val.lower() == "nan":
+                # Fill missing domain with "Viruses" (viral metagenomics pipeline)
+                if rank == "domain":
+                    val = "Viruses"
+                else:
+                    # Stop at first missing intermediate rank to avoid orphan branches
+                    break
+            path_parts.append(val)
+            node_id = "/".join(path_parts)
+            parent_id = "/".join(path_parts[:-1]) if len(path_parts) > 1 else ""
+            node_values[node_id] = node_values.get(node_id, 0.0) + rpm
+            node_parent[node_id] = parent_id
+            node_colors[node_id] = family_color
 
     ids = list(node_values.keys())
-    labels = [nid.split("/")[-1] for nid in ids]
+    raw_labels = [nid.split("/")[-1] for nid in ids]
     parents = [node_parent[nid] for nid in ids]
     values = [round(node_values[nid], 2) for nid in ids]
     colors = [node_colors.get(nid, "#CCCCCC") for nid in ids]
+
+    # Disambiguate duplicate labels by appending parent context
+    from collections import Counter
+    label_counts = Counter(raw_labels)
+    labels = []
+    for nid, lbl in zip(ids, raw_labels):
+        if label_counts[lbl] > 1 and lbl != "Unclassified":
+            parts = nid.split("/")
+            if len(parts) >= 2:
+                lbl = f"{lbl} ({parts[-2]})"
+        labels.append(lbl)
 
     return {"ids": ids, "labels": labels, "parents": parents, "values": values, "colors": colors}
 

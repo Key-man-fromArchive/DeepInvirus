@@ -587,8 +587,9 @@
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
         <label style="font-size:12px; color:var(--color-neutral);">Chart Height:</label>
         <input type="range" id="sankey-height-slider" min="500" max="5000" step="100" value="1500" style="width:200px;"
-               oninput="resizeSankey('sankey-plot', this.value); document.getElementById('sankey-height-val').textContent=this.value+'px'">
+               oninput="document.getElementById('sankey-height-val').textContent=this.value+'px'">
         <span id="sankey-height-val" style="font-size:12px; color:var(--color-neutral);">1500px</span>
+        <button onclick="resizeSankey('sankey-plot', document.getElementById('sankey-height-slider').value)" style="padding:2px 12px; font-size:12px; cursor:pointer; border:1px solid var(--color-border); border-radius:4px; background:var(--color-primary); color:white;">Apply</button>
       </div>
       <div class="chart-export-row" data-plot-target="sankey-plot"></div>
       <div id="sankey-plot" class="plotly-div" style="min-height:800px"></div>
@@ -636,12 +637,13 @@
     <!-- Export buttons -->
     <div class="chart-export-row" data-plot-target="taxonomy-chart"></div>
 
-    <!-- Chart height control -->
-    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-      <label style="font-size:12px; color:var(--color-neutral);">Chart Height:</label>
+    <!-- Chart height control (Sankey only) -->
+    <div id="taxonomy-height-control" style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+      <label style="font-size:12px; color:var(--color-neutral);">Sankey Height:</label>
       <input type="range" id="taxonomy-height-slider" min="500" max="5000" step="100" value="1500" style="width:200px;"
-             oninput="resizeSankey('taxonomy-chart', this.value); document.getElementById('taxonomy-height-val').textContent=this.value+'px'">
+             oninput="document.getElementById('taxonomy-height-val').textContent=this.value+'px'">
       <span id="taxonomy-height-val" style="font-size:12px; color:var(--color-neutral);">1500px</span>
+      <button onclick="resizeSankey('taxonomy-chart', document.getElementById('taxonomy-height-slider').value)" style="padding:2px 12px; font-size:12px; cursor:pointer; border:1px solid var(--color-border); border-radius:4px; background:var(--color-primary); color:white;">Apply</button>
     </div>
     <!-- Chart area -->
     <div class="plot-card" style="padding:12px;">
@@ -1048,6 +1050,10 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     }
 
     var sampleLabel = _currentSample === "all" ? "All Samples" : _currentSample;
+
+    // Show height control only for Sankey
+    var hCtrl = document.getElementById("taxonomy-height-control");
+    if (hCtrl) hCtrl.style.display = _currentViz === "sankey" ? "flex" : "none";
 
     if (_currentViz === "sankey") {
       if (!sankeyData || !sankeyData.nodes || sankeyData.nodes.length === 0) {
