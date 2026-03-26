@@ -273,120 +273,88 @@ def build_summary(bigtable: pd.DataFrame, matrix: pd.DataFrame) -> dict[str, Any
 def build_sankey(bigtable: pd.DataFrame) -> dict[str, Any]:
     """Build Plotly Sankey trace data from bigtable.
 
-    Hierarchy: Domain → Family → Genus (05-design-system.md section 6.2)
+    Hierarchy: Domain → Phylum → Class → Order → Family → Genus → Species
+    Only ranks with meaningful data are included.
 
     Returns a dict with keys: nodes, sources, targets, values, node_colors
     """
+    empty = {"nodes": [], "sources": [], "targets": [], "values": [], "node_colors": []}
     if bigtable.empty:
-        return {"nodes": [], "sources": [], "targets": [], "values": [], "node_colors": []}
+        return empty
 
-    if "domain" not in bigtable.columns or "family" not in bigtable.columns:
-        return {"nodes": [], "sources": [], "targets": [], "values": [], "node_colors": []}
-
-    # Determine grouping columns: use genus only if it has meaningful data
-    has_genus = (
-        "genus" in bigtable.columns
-        and not bigtable["genus"].dropna().empty
-        and not bigtable["genus"].dropna().str.strip().eq("").all()
-    )
-    # Aggregate total count by (domain, family[, genus])
-    count_col = "count" if "count" in bigtable.columns else None
-    grp_cols = ["domain", "family", "genus"] if has_genus else ["domain", "family"]
+    all_ranks = ["domain", "phylum", "class", "order", "family", "genus", "species"]
+    # Keep only ranks that exist and have non-empty data
+    ranks = [r for r in all_ranks if r in bigtable.columns
+             and not bigtable[r].dropna().empty
+             and not bigtable[r].dropna().astype(str).str.strip().eq("").all()]
+    if len(ranks) < 2:
+        return empty
 
     # Use unique contigs only (bigtable has per-sample rows)
     unique_bt = bigtable.drop_duplicates(subset=["seq_id"]) if "seq_id" in bigtable.columns else bigtable
 
-    # Clean: replace empty strings / whitespace-only with NaN so dropna works
-    bt_clean = unique_bt[grp_cols].copy()
-    for c in grp_cols:
-        bt_clean[c] = bt_clean[c].astype(str).str.strip().replace("", pd.NA)
+    # Clean rank columns
+    bt_clean = unique_bt[ranks].copy()
+    for c in ranks:
+        bt_clean[c] = bt_clean[c].astype(str).str.strip().replace({"": pd.NA, "nan": pd.NA})
 
-    if count_col:
-        bt_clean[count_col] = bigtable[count_col]
-        agg = (
-            bt_clean
-            .dropna(subset=grp_cols)
-            .groupby(grp_cols, as_index=False)[count_col]
-            .sum()
-        )
-    else:
-        agg = (
-            bt_clean
-            .dropna(subset=grp_cols)
-            .value_counts()
-            .reset_index(name="count")
-        )
+    # Build unique nodes with rank prefix to avoid collision (e.g. "Unclassified" at multiple ranks)
+    # node_key = "rank:name", display_label = "name"
+    node_keys: list[str] = []
+    node_labels: list[str] = []
+    node_key_set: set[str] = set()
 
-    # Build unique node list with level prefixes to avoid label collision
-    # (e.g. "Unclassified" can appear as both domain and family)
-    domains_raw = sorted(agg["domain"].unique())
-    families_raw = sorted(agg["family"].unique())
-    genera_raw = sorted(agg["genus"].unique()) if has_genus else []
+    for rank in ranks:
+        for name in sorted(bt_clean[rank].dropna().unique()):
+            key = f"{rank}:{name}"
+            if key not in node_key_set:
+                node_key_set.add(key)
+                node_keys.append(key)
+                node_labels.append(name)
 
-    # Use display labels but track by (level, name) to avoid collisions
-    domain_nodes = [f"{d}" for d in domains_raw]
-    family_nodes = [f for f in families_raw if f not in domains_raw]
-    # Families that collide with domain names get a suffix
-    family_nodes += [f"{f} (family)" for f in families_raw if f in domains_raw]
-    genus_nodes = [g for g in genera_raw if g not in domains_raw and g not in families_raw]
+    node_idx = {k: i for i, k in enumerate(node_keys)}
 
-    nodes = domain_nodes + family_nodes + genus_nodes
-    node_idx = {n: i for i, n in enumerate(nodes)}
+    # Colour: family nodes use ICTV colours, descendants inherit, ancestors neutral
+    family_of: dict[str, str] = {}  # node_key → family name
+    if "family" in ranks:
+        for _, row in bt_clean.dropna(subset=["family"]).iterrows():
+            fam = str(row["family"])
+            for rank in ranks:
+                val = row.get(rank)
+                if pd.notna(val) and str(val).strip():
+                    family_of[f"{rank}:{val}"] = fam
 
-    # Build lookup for family names that were renamed
-    family_label = {}
-    for f in families_raw:
-        if f in domains_raw:
-            family_label[f] = f"{f} (family)"
-        else:
-            family_label[f] = f
-
-    # Canonical colour rule: family nodes use fixed ICTV colours, genus nodes
-    # inherit their family's colour, and non-family ancestors stay neutral.
-    genus_family_map: dict[str, str] = {}
-    if has_genus:
-        for _, row in agg[["family", "genus"]].dropna().drop_duplicates().iterrows():
-            genus_family_map[str(row["genus"])] = str(row["family"])
-
-    node_colors: list[str] = []
-    for node in nodes:
-        if node in domains_raw:
+    node_colors = []
+    ancestor_ranks = {"domain", "phylum", "class", "order"}
+    for key in node_keys:
+        rank_name = key.split(":")[0]
+        if rank_name in ancestor_ranks and rank_name != "family":
             node_colors.append("#D9D9D9")
-            continue
-        raw_family = node[:-9] if node.endswith(" (family)") else node
-        if raw_family in families_raw:
-            node_colors.append(get_family_color(raw_family))
-            continue
-        family = genus_family_map.get(node, "Unclassified")
-        node_colors.append(get_family_color(family))
+        else:
+            fam = family_of.get(key, "Unclassified")
+            node_colors.append(get_family_color(fam))
 
+    # Build links between adjacent rank pairs
     sources: list[int] = []
     targets: list[int] = []
     values: list[float] = []
 
-    # Domain -> Family links (use family_label for renamed nodes)
-    df_links = agg.groupby(["domain", "family"], as_index=False)["count"].sum()
-    for _, row in df_links.iterrows():
-        d_node = row["domain"]
-        f_node = family_label.get(row["family"], row["family"])
-        if d_node in node_idx and f_node in node_idx and d_node != f_node:
-            sources.append(node_idx[d_node])
-            targets.append(node_idx[f_node])
-            values.append(_safe_float(row["count"], 1))
-
-    # Family -> Genus links (only when genus data exists)
-    if has_genus:
-        fg_links = agg.groupby(["family", "genus"], as_index=False)["count"].sum()
-        for _, row in fg_links.iterrows():
-            f_node = family_label.get(row["family"], row["family"])
-            g_node = row["genus"]
-            if f_node in node_idx and g_node in node_idx and f_node != g_node:
-                sources.append(node_idx[f_node])
-                targets.append(node_idx[g_node])
-                values.append(_safe_float(row["count"], 1))
+    for i in range(len(ranks) - 1):
+        parent_rank, child_rank = ranks[i], ranks[i + 1]
+        pair = bt_clean[[parent_rank, child_rank]].dropna()
+        if pair.empty:
+            continue
+        link_counts = pair.value_counts().reset_index(name="count")
+        for _, row in link_counts.iterrows():
+            p_key = f"{parent_rank}:{row[parent_rank]}"
+            c_key = f"{child_rank}:{row[child_rank]}"
+            if p_key in node_idx and c_key in node_idx and p_key != c_key:
+                sources.append(node_idx[p_key])
+                targets.append(node_idx[c_key])
+                values.append(int(row["count"]))
 
     return {
-        "nodes": nodes,
+        "nodes": node_labels,
         "sources": sources,
         "targets": targets,
         "values": values,
@@ -666,7 +634,7 @@ def build_taxonomy_tree(bigtable: pd.DataFrame) -> dict[str, Any]:
     Each *tree_data* dict has Plotly-compatible arrays:
     ``ids``, ``labels``, ``parents``, ``values`` (RPM sum).
     """
-    ranks = ["domain", "phylum", "class", "order", "family"]
+    ranks = ["domain", "phylum", "class", "order", "family", "genus", "species"]
 
     if bigtable.empty:
         empty = {"ids": [], "labels": [], "parents": [], "values": []}
