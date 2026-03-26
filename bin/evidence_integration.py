@@ -206,9 +206,13 @@ def load_hits(path: Path, prefix: str, parent_map: dict[int, int], default_taxon
         }
     )
     if prefix in {"aa1", "nt1"}:
-        out[f"{prefix}_taxonomy"] = df["staxids"].map(
-            lambda taxid: default_taxonomy if get_kingdom(int(taxid), parent_map) == "viral" else "non_viral_hit"
-        )
+        def _classify_taxid(taxid):
+            tid = int(taxid)
+            if tid == 0:
+                return "viral_db_hit"
+            kingdom = get_kingdom(tid, parent_map)
+            return default_taxonomy if kingdom == "viral" else "non_viral_hit"
+        out[f"{prefix}_taxonomy"] = df["staxids"].map(_classify_taxid)
     else:
         out[f"{prefix}_kingdom"] = df["staxids"].map(lambda taxid: get_kingdom(int(taxid), parent_map))
     return out

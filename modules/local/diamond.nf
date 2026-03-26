@@ -21,7 +21,7 @@ process DIAMOND_BLASTX {
         --query ${contigs} \\
         --db ${db} \\
         --out ${prefix}.diamond.tsv \\
-        --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore \\
+        --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids \\
         --threads ${task.cpus} \\
         --evalue 1e-5 \\
         --max-target-seqs 5 \\

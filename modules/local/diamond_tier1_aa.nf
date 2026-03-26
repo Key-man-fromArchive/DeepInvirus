@@ -20,7 +20,7 @@ process DIAMOND_TIER1_AA {
         --query ${contigs} \\
         --db ${viral_protein_db} \\
         --out ${prefix}.tier1_aa.tsv \\
-        --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore \\
+        --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids \\
         --threads ${task.cpus} \\
         --evalue 1e-5 \\
         --max-target-seqs 5 \\
