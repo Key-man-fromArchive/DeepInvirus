@@ -271,7 +271,7 @@ def compute_detection_confidence(depth: float, breadth: float) -> str:
 
 def build_bigtable(
     detection: pd.DataFrame,
-    taxonomy: pd.DataFrame,  # NOTE: MMseqs2 best-hit; kept for API compat but lineage already provides ranks
+    taxonomy: pd.DataFrame,  # MMseqs2 best-hit: seq_id, target, pident, evalue, bitscore[, taxid, taxname]
     coverage: pd.DataFrame,
     lineage: pd.DataFrame,
     sample_map: pd.DataFrame,
@@ -300,6 +300,20 @@ def build_bigtable(
     else:
         bt["family"] = "Unclassified"
         bt["taxonomy"] = ""
+
+    # --- Merge MMseqs2 best-hit info (target, pident) ---
+    if not taxonomy.empty and "seq_id" in taxonomy.columns:
+        hit_cols = ["seq_id"]
+        if "target" in taxonomy.columns:
+            hit_cols.append("target")
+        if "pident" in taxonomy.columns:
+            hit_cols.append("pident")
+        if len(hit_cols) > 1:
+            tax_hits = taxonomy[hit_cols].drop_duplicates(subset=["seq_id"], keep="first")
+            bt = bt.merge(tax_hits, on="seq_id", how="left")
+    for col in ["target", "pident"]:
+        if col not in bt.columns:
+            bt[col] = pd.NA
 
     # --- Merge lineage (contig-level, seq_id or taxid) ---
     rank_cols = ["domain", "phylum", "class", "order", "genus", "species"]
@@ -406,7 +420,8 @@ def build_bigtable(
     output_cols = [
         "seq_id", "sample", "length", "detection_method", "detection_score",
         "taxonomy", "family", "coverage", "breadth", "detection_confidence", "rpm",
-        "taxid", "domain", "phylum", "class", "order", "genus", "species",
+        "taxid", "target", "pident",
+        "domain", "phylum", "class", "order", "genus", "species",
         "ictv_classification", "baltimore_group", "group",
     ]
     for col in output_cols:

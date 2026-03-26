@@ -43,7 +43,7 @@ process TAXONKIT_REFORMAT {
 
         if [ -s ${prefix}_query_taxid.tsv ]; then
             cut -f2 ${prefix}_query_taxid.tsv | \\
-                taxonkit reformat -I 1 -f '{k};{p};{c};{o};{f};{g};{s}' 2>/dev/null | \\
+                taxonkit reformat -I 1 -f '{K};{p};{c};{o};{f};{g};{s}' 2>/dev/null | \\
                 paste <(cut -f1 ${prefix}_query_taxid.tsv) - > ${prefix}_lineage_raw.tsv
 
             echo -e "seq_id\\ttaxid\\tlineage\\tdomain\\tphylum\\tclass\\torder\\tfamily\\tgenus\\tspecies" > ${prefix}_lineage.tsv

@@ -787,14 +787,8 @@ def build_search_rows_v2(bigtable: pd.DataFrame) -> list[dict[str, Any]]:
                           ["domain", "phylum", "class", "order", "family", "genus", "species"]]
             taxonomy_str = "; ".join(r for r in ranks_list if r)
 
-        # Use lineage family if geNomad family is Unclassified
-        family = _safe_str(row.get("family", ""))
-        if family in ("Unclassified", ""):
-            for r in ["family", "order", "class", "phylum"]:
-                val = _safe_str(row.get(r, ""))
-                if val and val != "Unclassified":
-                    family = val
-                    break
+        # Keep family as-is (don't substitute with higher ranks)
+        family = _safe_str(row.get("family", "")) or "Unclassified"
 
         entry: dict[str, Any] = {
             "seq_id": seq_id,
@@ -1155,8 +1149,16 @@ def build_dashboard_data(
     # Taxonomy tree for Sunburst / Treemap
     data["taxonomy_tree"] = build_taxonomy_tree(bigtable)
 
-    # Enhanced search table (v2)
+    # Enhanced search table (v2) with GC content from sequences
     data["search_rows_v2"] = build_search_rows_v2(bigtable)
+    if contig_sequences:
+        for row in data["search_rows_v2"]:
+            seq = contig_sequences.get(row["seq_id"], "")
+            if seq:
+                gc = (seq.upper().count("G") + seq.upper().count("C")) / len(seq) * 100
+                row["gc_content"] = round(gc, 1)
+            else:
+                row["gc_content"] = None
 
     # Filter dropdown options
     data["filter_options"] = build_filter_options(bigtable)
