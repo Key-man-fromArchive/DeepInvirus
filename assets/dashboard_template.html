@@ -883,7 +883,7 @@
       </div>
       <input type="text" id="comparison-search" placeholder="Filter by name..." aria-label="Filter comparison rows">
       <label class="checkbox-inline">
-        <input type="checkbox" id="comparison-hide-unclassified">
+        <input type="checkbox" id="comparison-hide-unclassified" onchange="renderComparisonView()">
         <span>Hide Unclassified</span>
       </label>
     </div>
@@ -1656,7 +1656,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     var query = ((document.getElementById("comparison-search") || {}).value || "").toLowerCase();
     var hideUnclassified = !!((document.getElementById("comparison-hide-unclassified") || {}).checked);
     var filtered = rows.filter(function (row) {
-      if (hideUnclassified && (isUnclassifiedLabel(row.name) || isUnclassifiedLabel(row.family))) return false;
+      if (hideUnclassified && isUnclassifiedLabel(row.name)) return false;
       if (!query) return true;
       return String(row.name || "").toLowerCase().includes(query) ||
              String(row.family || "").toLowerCase().includes(query);
