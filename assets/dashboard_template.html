@@ -2395,7 +2395,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     var palette = ["#4e79a7","#f28e2b","#e15759","#76b7b2","#59a14f",
                    "#edc948","#b07aa1","#ff9da7","#9c755f","#bab0ac"];
     var traces = [];
-    var binSize = 10; // each point = 10bp average
+    var binSize = 50; // each point = 50bp average
     var sampleKeys = sampleFilter === "__all__" ? Object.keys(dp) : [sampleFilter];
 
     sampleKeys.forEach(function(sample, idx) {

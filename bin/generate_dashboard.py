@@ -1613,14 +1613,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.depth_dir and Path(args.depth_dir).is_dir():
             import gzip
             depth_dir = Path(args.depth_dir)
-            # Get top contigs by RPM (limit to 100 to keep dashboard size manageable)
+            # Load all contigs in bigtable (50bp binning keeps size manageable)
             top_contigs = set()
-            if not bigtable.empty and "rpm" in bigtable.columns:
-                top_contigs = set(
-                    bigtable.groupby("seq_id", as_index=False)["rpm"].sum()
-                    .sort_values("rpm", ascending=False)
-                    .head(100)["seq_id"].astype(str).tolist()
-                )
+            if not bigtable.empty and "seq_id" in bigtable.columns:
+                top_contigs = set(bigtable["seq_id"].dropna().astype(str).unique())
             for gz_file in sorted(depth_dir.glob("*_depth.tsv.gz")):
                 sample_name = gz_file.name.replace("_depth.tsv.gz", "")
                 try:
@@ -1642,7 +1638,7 @@ def main(argv: list[str] | None = None) -> int:
 
             # Bin depth data (every 10bp average) to reduce size
             binned_depth: dict[str, dict[str, list]] = {}
-            bin_size = 10
+            bin_size = 50
             for contig, samples_depth in depth_data.items():
                 binned_depth[contig] = {}
                 for sample, depths in samples_depth.items():
