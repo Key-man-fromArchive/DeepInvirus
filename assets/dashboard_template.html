@@ -584,6 +584,12 @@
     <h2 class="section-title">Taxonomic Hierarchy (Sankey)</h2>
     <div class="plot-card">
       <h3>Domain → Phylum → Class → Order → Family → Genus → Species</h3>
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+        <label style="font-size:12px; color:var(--color-neutral);">Chart Height:</label>
+        <input type="range" id="sankey-height-slider" min="500" max="5000" step="100" value="1500" style="width:200px;"
+               oninput="resizeSankey('sankey-plot', this.value); document.getElementById('sankey-height-val').textContent=this.value+'px'">
+        <span id="sankey-height-val" style="font-size:12px; color:var(--color-neutral);">1500px</span>
+      </div>
       <div class="chart-export-row" data-plot-target="sankey-plot"></div>
       <div id="sankey-plot" class="plotly-div" style="min-height:800px"></div>
     </div>
@@ -630,9 +636,16 @@
     <!-- Export buttons -->
     <div class="chart-export-row" data-plot-target="taxonomy-chart"></div>
 
+    <!-- Chart height control -->
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+      <label style="font-size:12px; color:var(--color-neutral);">Chart Height:</label>
+      <input type="range" id="taxonomy-height-slider" min="500" max="5000" step="100" value="1500" style="width:200px;"
+             oninput="resizeSankey('taxonomy-chart', this.value); document.getElementById('taxonomy-height-val').textContent=this.value+'px'">
+      <span id="taxonomy-height-val" style="font-size:12px; color:var(--color-neutral);">1500px</span>
+    </div>
     <!-- Chart area -->
     <div class="plot-card" style="padding:12px;">
-      <div id="taxonomy-chart" style="width:100%;height:700px;"></div>
+      <div id="taxonomy-chart" style="width:100%;min-height:700px;"></div>
     </div>
 
   </section>
@@ -784,7 +797,8 @@
         <h3 style="font-size:13px; margin-bottom:8px; color:var(--color-text);">{{ fig.label }}</h3>
         <img src="{{ fig.data_uri }}" alt="{{ fig.label }}"
              style="max-width:100%; height:auto; border:1px solid var(--color-border); border-radius:4px; cursor:pointer;"
-             onclick="window.open(this.src, '_blank')" />
+             onclick="openFigureViewer(this.src, '{{ fig.label }}')"
+             title="Click to enlarge" />
         <p style="font-size:11px; color:var(--color-neutral); margin-top:4px;">{{ fig.name }}</p>
       </div>
       {% endfor %}
@@ -798,6 +812,16 @@
   </section>
 
 </main>
+
+<!-- Figure viewer overlay -->
+<div id="figure-viewer" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; cursor:pointer; overflow:auto;" onclick="closeFigureViewer()">
+  <div style="position:absolute; top:10px; right:20px; color:white; font-size:24px; cursor:pointer; z-index:10000;" onclick="closeFigureViewer()">&#10005;</div>
+  <div style="position:absolute; top:10px; left:20px; color:white; font-size:14px;" id="figure-viewer-title"></div>
+  <div style="position:absolute; top:10px; right:60px;">
+    <a id="figure-viewer-newtab" href="#" target="_blank" style="color:white; font-size:13px; text-decoration:underline;">Open in new tab</a>
+  </div>
+  <img id="figure-viewer-img" src="" style="display:block; max-width:95%; max-height:90%; margin:50px auto; border-radius:4px;" onclick="event.stopPropagation()" />
+</div>
 
 <div id="contig-modal" class="modal-backdrop" aria-hidden="true">
   <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="contig-modal-title">
@@ -920,6 +944,35 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     var options = Object.assign({}, EXPORT_CONFIG[format] || EXPORT_CONFIG.png);
     options.filename = targetId;
     Plotly.downloadImage(chart, options);
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* Figure viewer (Results tab)                                              */
+  /* ---------------------------------------------------------------------- */
+  /* ---------------------------------------------------------------------- */
+  /* Sankey height resize                                                     */
+  /* ---------------------------------------------------------------------- */
+  function resizeSankey(divId, newHeight) {
+    var el = document.getElementById(divId);
+    if (!el) return;
+    el.style.height = newHeight + "px";
+    el.style.minHeight = newHeight + "px";
+    Plotly.relayout(divId, { height: parseInt(newHeight) });
+  }
+
+  function openFigureViewer(src, title) {
+    document.getElementById("figure-viewer-img").src = src;
+    document.getElementById("figure-viewer-title").textContent = title || "";
+    document.getElementById("figure-viewer-newtab").href = src;
+    document.getElementById("figure-viewer").style.display = "block";
+    document.body.style.overflow = "hidden";
+  }
+  function closeFigureViewer() {
+    document.getElementById("figure-viewer").style.display = "none";
+    document.body.style.overflow = "";
+  }
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") closeFigureViewer();
   });
 
   /* ---------------------------------------------------------------------- */

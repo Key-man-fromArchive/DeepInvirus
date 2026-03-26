@@ -676,6 +676,9 @@ def build_taxonomy_tree(bigtable: pd.DataFrame) -> dict[str, Any]:
     if "sample" in bigtable.columns:
         for sample in sorted(bigtable["sample"].dropna().unique()):
             sample_bt = bigtable[bigtable["sample"] == sample]
+            # Only include contigs with non-zero RPM in this sample
+            if "rpm" in sample_bt.columns:
+                sample_bt = sample_bt[pd.to_numeric(sample_bt["rpm"], errors="coerce").fillna(0) > 0]
             per_sample[str(sample)] = _build_sunburst_tree(sample_bt, available_ranks)
 
     return {"all": all_tree, "per_sample": per_sample}
