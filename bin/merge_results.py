@@ -355,6 +355,21 @@ def build_bigtable(
                     if filled > 0:
                         print(f"  Fallback: filled {filled} rows for '{col}' from taxonomy string", file=sys.stderr)
 
+    # --- Normalize domain: viral metagenomics → all domains should be "Viruses" ---
+    # TaxonKit {K} may return realm names (Heunggongvirae, Bamfordvirae, etc.) instead of
+    # the superkingdom "Viruses". Normalize to "Viruses" for consistency.
+    if "domain" in bt.columns:
+        domain_filled = bt["domain"].notna() & (bt["domain"].astype(str).str.strip() != "")
+        domain_empty = ~domain_filled
+        # Set non-empty domain values to "Viruses" (this is a viral metagenomics pipeline)
+        bt.loc[domain_filled, "domain"] = "Viruses"
+        # Fill empty domains with "Viruses" if any other rank is filled
+        has_lower = pd.Series(False, index=bt.index)
+        for r in ["phylum", "class", "order", "family", "genus", "species"]:
+            if r in bt.columns:
+                has_lower |= bt[r].notna() & (bt[r].astype(str).str.strip() != "")
+        bt.loc[domain_empty & has_lower, "domain"] = "Viruses"
+
     # --- Merge ICTV (on family + genus + species) ---
     if not ictv.empty:
         # Normalize ICTV column names to lowercase
@@ -531,6 +546,19 @@ def main(argv: list[str] | None = None) -> int:
                 bigtable = bigtable.merge(ev_merge, on="seq_id", how="left")
                 n_matched = bigtable["evidence_classification"].notna().sum()
                 print(f"Evidence integration: {n_matched} contigs classified", file=sys.stderr)
+
+            # Backfill empty taxonomy from geNomad taxonomy in evidence file
+            if "genomad_taxonomy" in ev.columns and "taxonomy" in bigtable.columns:
+                gn_tax = ev[["seq_id", "genomad_taxonomy"]].dropna(subset=["genomad_taxonomy"])
+                gn_tax = gn_tax[gn_tax["genomad_taxonomy"].astype(str).str.strip() != ""]
+                gn_tax = gn_tax.drop_duplicates(subset=["seq_id"], keep="first")
+                tax_empty = bigtable["taxonomy"].isna() | (bigtable["taxonomy"].astype(str).str.strip() == "")
+                if tax_empty.any():
+                    gn_map = gn_tax.set_index("seq_id")["genomad_taxonomy"]
+                    bigtable.loc[tax_empty, "taxonomy"] = bigtable.loc[tax_empty, "seq_id"].map(gn_map)
+                    filled = bigtable.loc[tax_empty, "taxonomy"].notna().sum()
+                    if filled > 0:
+                        print(f"  Backfilled {filled} taxonomy from geNomad", file=sys.stderr)
         except Exception as e:
             print(f"WARNING: Failed to load evidence classified: {e}", file=sys.stderr)
 
