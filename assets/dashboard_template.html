@@ -395,9 +395,9 @@
     }
     .modal-backdrop.open { display: flex; }
     .modal-dialog {
-      width: min(920px, 100%);
-      max-height: 90vh;
-      overflow: auto;
+      width: min(960px, 95%);
+      max-height: 95vh;
+      overflow-y: auto;
       background: #fff;
       border-radius: 10px;
       border: 1px solid var(--color-border);
@@ -1219,7 +1219,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
 
     var uniqueTargets = new Set(sd.targets || []);
     var activeNodes = new Set([...(sd.sources || []), ...uniqueTargets]);
-    var dynamicHeight = Math.max(700, Math.min(3000, activeNodes.size * 28));
+    var dynamicHeight = Math.max(1200, Math.min(4000, activeNodes.size * 30));
     var layout = Object.assign(baseLayout("Taxonomic Flow: Domain → Phylum → ... → Species"), {
       margin: { t: 50, r: 250, b: 20, l: 20 },
       height: dynamicHeight
@@ -1377,7 +1377,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
 
   function taxonomySankeyHeight(sankeyData) {
     var active = new Set([].concat(sankeyData.sources || [], sankeyData.targets || []));
-    return Math.max(700, Math.min(3000, active.size * 28));
+    return Math.max(1200, Math.min(4000, active.size * 30));
   }
 
   function applyTaxonomyControls() {
