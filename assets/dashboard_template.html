@@ -1026,6 +1026,11 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     });
 
     document.getElementById("sankey-plot").style.minHeight = dynamicHeight + "px";
+    // Sync slider to dynamic height
+    var slider = document.getElementById("sankey-height-slider");
+    if (slider) { slider.value = dynamicHeight; }
+    var label = document.getElementById("sankey-height-val");
+    if (label) { label.textContent = dynamicHeight + "px"; }
     Plotly.newPlot("sankey-plot", [trace], layout, PLOTLY_CONFIG);
   }
 
@@ -1932,6 +1937,12 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   // Pre-populate search rows v2 in background so sort/filter work before tab is opened
   // @TASK T5.2 - pre-load search_rows_v2
   if (D.search_rows_v2) { _allRows = D.search_rows_v2; _tableRows = D.search_rows_v2; }
+
+  // Expose IIFE-scoped functions for inline onclick/onchange handlers
+  window.resizeSankey = resizeSankey;
+  window.openFigureViewer = openFigureViewer;
+  window.closeFigureViewer = closeFigureViewer;
+  window.renderComparisonView = renderComparisonView;
 
 })();
 </script>
