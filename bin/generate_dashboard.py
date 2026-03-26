@@ -52,6 +52,12 @@ logger = logging.getLogger(__name__)
 _ASSETS_DIR = Path(__file__).parent.parent / "assets"
 _TEMPLATE_NAME = "dashboard_template.html"
 PLOTLY_VERSION = "2.32.0"
+TAXONOMY_RANKS = ["domain", "phylum", "class", "order", "family", "genus", "species"]
+TOP_TAXON_PALETTE = [
+    "#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F",
+    "#EDC948", "#B07AA1", "#FF9DA7", "#9C755F", "#BAB0AC",
+    "#86BCB6", "#E17C05",
+]
 
 ICTV_FAMILY_COLORS = {
     "Parvoviridae": "#E69F00",
@@ -74,6 +80,9 @@ ICTV_FAMILY_COLORS = {
     "Genomoviridae": "#AA4466",
     "Unclassified": "#CCCCCC",
 }
+
+LIGHT_NEUTRAL_COLOR = "#D6D9DF"
+LIGHT_BRANCH_COLOR = "#E4E7EC"
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +165,74 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _normalize_taxon_label(value: Any, fallback: str = "Unclassified") -> str:
+    """Return a normalized taxonomy label suitable for grouping."""
+    label = _safe_str(value)
+    if not label:
+        return fallback
+    if label.lower() in {"unknown", "review"}:
+        return fallback
+    return label
+
+
+def _available_taxonomy_ranks(df: pd.DataFrame) -> list[str]:
+    """Return ordered taxonomy ranks that have at least one non-empty value."""
+    ranks: list[str] = []
+    for rank in TAXONOMY_RANKS:
+        if rank not in df.columns:
+            continue
+        values = df[rank].dropna().astype(str).str.strip()
+        if not values.empty and not values.eq("").all():
+            ranks.append(rank)
+    return ranks
+
+
+def _get_rank_subset(available_ranks: list[str], max_rank: str | None = None) -> list[str]:
+    """Return ranks up to and including *max_rank* if provided."""
+    if not available_ranks:
+        return []
+    if max_rank and max_rank in available_ranks:
+        return available_ranks[:available_ranks.index(max_rank) + 1]
+    return available_ranks
+
+
+def _row_deepest_rank_label(row: pd.Series | dict[str, Any], ranks: list[str]) -> tuple[str | None, str]:
+    """Return the deepest classified rank and its label for a row."""
+    deepest_rank = None
+    deepest_label = "Unclassified"
+    for rank in ranks:
+        value = _normalize_taxon_label(row.get(rank), fallback="")
+        if value:
+            deepest_rank = rank
+            deepest_label = value
+    return deepest_rank, deepest_label
+
+
+def _build_top_taxon_color_map(bt: pd.DataFrame, ranks: list[str]) -> dict[tuple[str | None, str], str]:
+    """Assign palette colors to the top deepest classified taxa by total RPM."""
+    if bt.empty or not ranks:
+        return {}
+
+    label_totals: dict[tuple[str | None, str], float] = {}
+    for _, row in bt.iterrows():
+        key = _row_deepest_rank_label(row, ranks)
+        label_totals[key] = label_totals.get(key, 0.0) + _safe_float(row.get("rpm", 0), 1.0)
+
+    ranked = sorted(
+        (
+            (key, total)
+            for key, total in label_totals.items()
+            if key[1].lower() != "unclassified"
+        ),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    return {
+        key: TOP_TAXON_PALETTE[idx]
+        for idx, (key, _) in enumerate(ranked[:len(TOP_TAXON_PALETTE)])
+    }
+
+
 def get_family_color(family_name: Any) -> str:
     """Return the canonical color for a family, falling back deterministically per name."""
     family = _safe_str(family_name) or "Unclassified"
@@ -192,6 +269,11 @@ def build_host_removal_data(host_stats: pd.DataFrame) -> dict[str, Any]:
             "unmapped_reads": [],
             "host_pct": [],
             "total_reads": [],
+            "status": "disabled",
+            "message": (
+                "Host removal was not performed (--host none). Enable host removal by "
+                "specifying --host <genome> to see mapping statistics."
+            ),
         }
 
     samples = host_stats["sample"].tolist() if "sample" in host_stats.columns else []
@@ -212,12 +294,36 @@ def build_host_removal_data(host_stats: pd.DataFrame) -> dict[str, Any]:
         if "total_reads" in host_stats.columns else []
     )
 
+    status = "available"
+    message = ""
+    host_values = set()
+    for col in ("host", "host_genome", "host_reference"):
+        if col in host_stats.columns:
+            host_values.update(
+                _safe_str(v).lower() for v in host_stats[col].dropna().tolist() if _safe_str(v)
+            )
+    all_zero = (
+        mapped and unmapped and total and
+        all(v == 0 for v in mapped) and
+        all(v == 0 for v in unmapped) and
+        all(v == 0 for v in total)
+    )
+    host_disabled = bool(host_values) and host_values.issubset({"none", "null", "na", "n/a"})
+    if all_zero or host_disabled:
+        status = "disabled"
+        message = (
+            "Host removal was not performed (--host none). Enable host removal by "
+            "specifying --host <genome> to see mapping statistics."
+        )
+
     return {
         "samples": samples,
         "mapped_reads": mapped,
         "unmapped_reads": unmapped,
         "host_pct": host_pct,
         "total_reads": total,
+        "status": status,
+        "message": message,
     }
 
 
@@ -282,7 +388,7 @@ def build_summary(bigtable: pd.DataFrame, matrix: pd.DataFrame) -> dict[str, Any
     }
 
 
-def build_sankey(bigtable: pd.DataFrame) -> dict[str, Any]:
+def build_sankey(bigtable: pd.DataFrame, max_rank: str | None = None) -> dict[str, Any]:
     """Build Plotly Sankey trace data from bigtable.
 
     Hierarchy: Domain → Phylum → Class → Order → Family → Genus → Species
@@ -290,15 +396,15 @@ def build_sankey(bigtable: pd.DataFrame) -> dict[str, Any]:
 
     Returns a dict with keys: nodes, sources, targets, values, node_colors
     """
-    empty = {"nodes": [], "sources": [], "targets": [], "values": [], "node_colors": []}
+    empty = {
+        "nodes": [], "node_keys": [], "node_ranks": [], "sources": [], "targets": [],
+        "values": [], "node_colors": [], "available_ranks": [],
+    }
     if bigtable.empty:
         return empty
 
-    all_ranks = ["domain", "phylum", "class", "order", "family", "genus", "species"]
-    # Keep only ranks that exist and have non-empty data
-    ranks = [r for r in all_ranks if r in bigtable.columns
-             and not bigtable[r].dropna().empty
-             and not bigtable[r].dropna().astype(str).str.strip().eq("").all()]
+    available_ranks = _available_taxonomy_ranks(bigtable)
+    ranks = _get_rank_subset(available_ranks, max_rank)
     if len(ranks) < 2:
         return empty
 
@@ -343,7 +449,7 @@ def build_sankey(bigtable: pd.DataFrame) -> dict[str, Any]:
     for key in node_keys:
         rank_name = key.split(":")[0]
         if rank_name in ancestor_ranks and rank_name != "family":
-            node_colors.append("#D9D9D9")
+            node_colors.append(LIGHT_NEUTRAL_COLOR)
         else:
             fam = family_of.get(key, "Unclassified")
             node_colors.append(get_family_color(fam))
@@ -369,10 +475,13 @@ def build_sankey(bigtable: pd.DataFrame) -> dict[str, Any]:
 
     return {
         "nodes": node_labels,
+        "node_keys": node_keys,
+        "node_ranks": [key.split(":", 1)[0] for key in node_keys],
         "sources": sources,
         "targets": targets,
         "values": values,
         "node_colors": node_colors,
+        "available_ranks": available_ranks,
     }
 
 
@@ -608,13 +717,14 @@ def _build_sunburst_tree(bt: pd.DataFrame, ranks: list[str]) -> dict[str, Any]:
     """
     node_values: dict[str, float] = {}
     node_parent: dict[str, str] = {}
-    node_colors: dict[str, str] = {}
+    node_color_weights: dict[str, dict[str, float]] = {}
 
     has_rpm = "rpm" in bt.columns
+    top_taxon_colors = _build_top_taxon_color_map(bt, ranks)
 
     for _, row in bt.iterrows():
         rpm = _safe_float(row.get("rpm", 0)) if has_rpm else 1.0
-        family_color = get_family_color(infer_family_name(row))
+        branch_color = top_taxon_colors.get(_row_deepest_rank_label(row, ranks), LIGHT_BRANCH_COLOR)
         path_parts: list[str] = []
         for i, rank in enumerate(ranks):
             val = str(row.get(rank, "")).strip()
@@ -630,13 +740,27 @@ def _build_sunburst_tree(bt: pd.DataFrame, ranks: list[str]) -> dict[str, Any]:
             parent_id = "/".join(path_parts[:-1]) if len(path_parts) > 1 else ""
             node_values[node_id] = node_values.get(node_id, 0.0) + rpm
             node_parent[node_id] = parent_id
-            node_colors[node_id] = family_color
+            if node_id not in node_color_weights:
+                node_color_weights[node_id] = {}
+            node_color_weights[node_id][branch_color] = (
+                node_color_weights[node_id].get(branch_color, 0.0) + rpm
+            )
 
     ids = list(node_values.keys())
     raw_labels = [nid.split("/")[-1] for nid in ids]
     parents = [node_parent[nid] for nid in ids]
     values = [round(node_values[nid], 2) for nid in ids]
-    colors = [node_colors.get(nid, "#CCCCCC") for nid in ids]
+    colors = []
+    rank_by_id = []
+    for nid in ids:
+        weights = node_color_weights.get(nid, {})
+        if weights:
+            color = max(weights.items(), key=lambda item: item[1])[0]
+        else:
+            color = LIGHT_BRANCH_COLOR
+        colors.append(color)
+        depth = min(len(nid.split("/")) - 1, len(ranks) - 1)
+        rank_by_id.append(ranks[depth])
 
     # Disambiguate duplicate labels by appending parent context
     from collections import Counter
@@ -649,7 +773,15 @@ def _build_sunburst_tree(bt: pd.DataFrame, ranks: list[str]) -> dict[str, Any]:
                 lbl = f"{lbl} ({parts[-2]})"
         labels.append(lbl)
 
-    return {"ids": ids, "labels": labels, "parents": parents, "values": values, "colors": colors}
+    return {
+        "ids": ids,
+        "labels": labels,
+        "parents": parents,
+        "values": values,
+        "colors": colors,
+        "ranks": rank_by_id,
+        "available_ranks": ranks,
+    }
 
 
 def build_taxonomy_tree(bigtable: pd.DataFrame) -> dict[str, Any]:
@@ -665,10 +797,8 @@ def build_taxonomy_tree(bigtable: pd.DataFrame) -> dict[str, Any]:
     Each *tree_data* dict has Plotly-compatible arrays:
     ``ids``, ``labels``, ``parents``, ``values`` (RPM sum).
     """
-    all_ranks = ["domain", "phylum", "class", "order", "family", "genus", "species"]
-
     if bigtable.empty:
-        empty = {"ids": [], "labels": [], "parents": [], "values": []}
+        empty = {"ids": [], "labels": [], "parents": [], "values": [], "colors": [], "ranks": []}
         return {"all": empty, "per_sample": {}}
 
     # Use unique contigs only (bigtable has per-sample rows)
@@ -679,14 +809,9 @@ def build_taxonomy_tree(bigtable: pd.DataFrame) -> dict[str, Any]:
     )
 
     # Filter to ranks that exist in DataFrame and have meaningful data
-    available_ranks = []
-    for r in all_ranks:
-        if r in bigtable.columns:
-            col = bigtable[r].dropna().astype(str).str.strip()
-            if not col.empty and not col.eq("").all():
-                available_ranks.append(r)
+    available_ranks = _available_taxonomy_ranks(bigtable)
     if not available_ranks:
-        empty = {"ids": [], "labels": [], "parents": [], "values": []}
+        empty = {"ids": [], "labels": [], "parents": [], "values": [], "colors": [], "ranks": []}
         return {"all": empty, "per_sample": {}}
 
     all_tree = _build_sunburst_tree(unique_bt, available_ranks)
@@ -700,7 +825,7 @@ def build_taxonomy_tree(bigtable: pd.DataFrame) -> dict[str, Any]:
                 sample_bt = sample_bt[pd.to_numeric(sample_bt["rpm"], errors="coerce").fillna(0) > 0]
             per_sample[str(sample)] = _build_sunburst_tree(sample_bt, available_ranks)
 
-    return {"all": all_tree, "per_sample": per_sample}
+    return {"all": all_tree, "per_sample": per_sample, "available_ranks": available_ranks}
 
 
 def build_per_sample_sankey(bigtable: pd.DataFrame) -> dict[str, Any]:
@@ -1167,6 +1292,7 @@ def build_dashboard_data(
 
     # Taxonomy tree for Sunburst / Treemap
     data["taxonomy_tree"] = build_taxonomy_tree(bigtable)
+    data["taxonomy_available_ranks"] = data["taxonomy_tree"].get("available_ranks", [])
 
     # Enhanced search table (v2) with GC content from sequences
     data["search_rows_v2"] = build_search_rows_v2(bigtable)

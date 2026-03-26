@@ -24,20 +24,31 @@
     /* Design System: 05-design-system.md section 3 & 4                   */
     /* ------------------------------------------------------------------ */
     :root {
-      --color-primary-1: #1F77B4;   /* Deep Blue  – DNA virus / primary  */
-      --color-primary-2: #FF7F0E;   /* Orange     – RNA virus            */
-      --color-primary-3: #2CA02C;   /* Green      – dsDNA                */
-      --color-primary-4: #D62728;   /* Red        – ssRNA                */
-      --color-primary-5: #9467BD;   /* Purple     – ssDNA                */
-      --color-primary-6: #8C564B;   /* Brown      – dsRNA                */
-      --color-neutral:   #7F7F7F;   /* Gray       – Unclassified         */
-      --color-bg:        #FFFFFF;   /* Background                        */
-      --color-surface:   #F8F9FA;   /* Card background                   */
-      --color-text:      #212529;   /* Body text                         */
-      --color-border:    #DEE2E6;
-      --color-tab-active: #1F77B4;
-      --font-main: 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-      --font-mono: 'Roboto Mono', 'Courier New', monospace;
+      --color-primary-1: #2563eb;
+      --color-primary-2: #0f766e;
+      --color-primary-3: #d97706;
+      --color-primary-4: #dc2626;
+      --color-primary-5: #7c3aed;
+      --color-primary-6: #475569;
+      --color-neutral: #64748b;
+      --color-bg: #f4f7fb;
+      --color-bg-accent: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+      --color-surface: rgba(255, 255, 255, 0.88);
+      --color-surface-strong: #ffffff;
+      --color-text: #0f172a;
+      --color-text-muted: #475569;
+      --color-border: rgba(148, 163, 184, 0.24);
+      --color-border-strong: rgba(148, 163, 184, 0.42);
+      --color-tab-active: #1d4ed8;
+      --color-row-alt: rgba(241, 245, 249, 0.75);
+      --color-hover: rgba(37, 99, 235, 0.08);
+      --shadow-card: 0 14px 30px rgba(15, 23, 42, 0.08);
+      --shadow-soft: 0 8px 18px rgba(15, 23, 42, 0.06);
+      --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      --font-mono: "SFMono-Regular", "SF Mono", "Roboto Mono", Consolas, "Liberation Mono", monospace;
+      --radius-sm: 10px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -46,8 +57,8 @@
       font-family: var(--font-main);
       font-size: 14px;
       color: var(--color-text);
-      background: var(--color-bg);
-      line-height: 1.5;
+      background: var(--color-bg-accent);
+      line-height: 1.6;
     }
 
     /* ---- Header -------------------------------------------------------- */
@@ -55,9 +66,10 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 24px;
-      background: var(--color-primary-1);
+      padding: 18px 28px;
+      background: linear-gradient(135deg, #163c8c 0%, #2563eb 52%, #0f766e 100%);
       color: #fff;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
     }
     .header h1 {
       font-size: 24px;
@@ -66,44 +78,58 @@
     }
     .header-actions button {
       margin-left: 8px;
-      padding: 6px 14px;
-      border: 1px solid rgba(255,255,255,0.6);
-      border-radius: 4px;
-      background: transparent;
+      padding: 8px 14px;
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.16);
       color: #fff;
       cursor: pointer;
       font-size: 13px;
+      transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
     }
-    .header-actions button:hover { background: rgba(255,255,255,0.15); }
+    .header-actions button:hover {
+      background: rgba(255,255,255,0.24);
+      transform: translateY(-1px);
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+    }
 
     /* ---- Tab bar ------------------------------------------------------- */
     .tab-bar {
       display: flex;
-      border-bottom: 2px solid var(--color-border);
-      background: var(--color-surface);
-      padding: 0 24px;
+      gap: 10px;
+      border-bottom: 1px solid var(--color-border);
+      background: rgba(255,255,255,0.72);
+      backdrop-filter: blur(14px);
+      padding: 12px 24px;
+      position: sticky;
+      top: 0;
+      z-index: 20;
     }
     .tab-btn {
-      padding: 12px 20px;
-      border: none;
+      padding: 10px 18px;
+      border: 1px solid transparent;
+      border-radius: 999px;
       background: transparent;
       cursor: pointer;
       font-size: 14px;
-      font-weight: 500;
-      color: var(--color-text);
-      border-bottom: 3px solid transparent;
-      margin-bottom: -2px;
-      transition: color 0.15s, border-color 0.15s;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
     }
-    .tab-btn:hover { color: var(--color-tab-active); }
+    .tab-btn:hover {
+      color: var(--color-tab-active);
+      background: rgba(255,255,255,0.7);
+    }
     .tab-btn.active {
       color: var(--color-tab-active);
-      border-bottom-color: var(--color-tab-active);
+      border-color: rgba(37, 99, 235, 0.18);
+      background: linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(232,240,255,0.96) 100%);
+      box-shadow: var(--shadow-soft);
     }
 
     /* ---- Main container ------------------------------------------------ */
     .main {
-      padding: 24px;
+      padding: 28px 24px 36px;
       max-width: 1400px;
       margin: 0 auto;
     }
@@ -122,8 +148,10 @@
     .card {
       background: var(--color-surface);
       border: 1px solid var(--color-border);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       padding: 18px 20px;
+      box-shadow: var(--shadow-card);
+      backdrop-filter: blur(10px);
     }
     .card-label {
       font-size: 12px;
@@ -166,8 +194,10 @@
     .plot-card {
       background: var(--color-surface);
       border: 1px solid var(--color-border);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       padding: 16px;
+      box-shadow: var(--shadow-card);
+      backdrop-filter: blur(10px);
     }
     .plot-card h3 {
       font-size: 14px;
@@ -187,35 +217,32 @@
     .search-bar input[type="text"] {
       flex: 1;
       min-width: 220px;
-      padding: 8px 12px;
-      border: 1px solid var(--color-border);
-      border-radius: 4px;
+      padding: 10px 14px;
+      border: 1px solid var(--color-border-strong);
+      border-radius: var(--radius-sm);
       font-size: 14px;
       font-family: var(--font-main);
+      background: rgba(255,255,255,0.92);
     }
     .search-bar select {
-      padding: 8px 12px;
-      border: 1px solid var(--color-border);
-      border-radius: 4px;
+      padding: 10px 12px;
+      border: 1px solid var(--color-border-strong);
+      border-radius: var(--radius-sm);
       font-size: 14px;
-      background: #fff;
+      background: rgba(255,255,255,0.92);
     }
     .search-bar button {
-      padding: 8px 18px;
-      background: var(--color-primary-1);
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
+      padding: 10px 18px;
       font-size: 14px;
     }
-    .search-bar button:hover { background: #1666a0; }
 
     /* ---- Data table --------------------------------------------------- */
     .table-wrapper {
       overflow-x: auto;
       border: 1px solid var(--color-border);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
+      background: rgba(255,255,255,0.9);
+      box-shadow: var(--shadow-card);
     }
     table.data-table {
       width: 100%;
@@ -223,12 +250,13 @@
       font-size: 13px;
     }
     table.data-table thead {
-      background: var(--color-surface);
+      background: rgba(248, 250, 252, 0.95);
       position: sticky;
       top: 0;
+      z-index: 2;
     }
     table.data-table th {
-      padding: 10px 14px;
+      padding: 12px 14px;
       text-align: left;
       font-weight: 600;
       border-bottom: 2px solid var(--color-border);
@@ -236,15 +264,16 @@
       cursor: pointer;
       user-select: none;
     }
-    table.data-table th:hover { background: #e9ecef; }
+    table.data-table th:hover { background: rgba(226, 232, 240, 0.95); }
     table.data-table td {
-      padding: 8px 14px;
+      padding: 10px 14px;
       border-bottom: 1px solid var(--color-border);
       font-family: var(--font-mono);
       font-size: 12px;
     }
+    table.data-table tbody tr:nth-child(even) td { background: var(--color-row-alt); }
     table.data-table tr:last-child td { border-bottom: none; }
-    table.data-table tr:hover td { background: #f0f4f8; }
+    table.data-table tr:hover td { background: var(--color-hover); }
 
     .badge {
       display: inline-block;
@@ -265,6 +294,7 @@
       font-size: 12px;
       border-top: 1px solid var(--color-border);
       margin-top: 40px;
+      background: rgba(255,255,255,0.7);
     }
 
     /* ---- Taxonomy tab controls ----------------------------------------- */
@@ -291,13 +321,14 @@
     .viz-toggle {
       display: flex;
       border: 1px solid var(--color-border);
-      border-radius: 6px;
+      border-radius: 999px;
       overflow: hidden;
+      background: rgba(255,255,255,0.78);
     }
     .viz-btn {
-      padding: 6px 16px;
+      padding: 8px 16px;
       border: none;
-      background: var(--color-surface);
+      background: transparent;
       cursor: pointer;
       font-size: 13px;
       transition: background 0.2s, color 0.2s;
@@ -311,12 +342,12 @@
       background: var(--color-border);
     }
     .taxonomy-controls select {
-      padding: 6px 10px;
-      border: 1px solid var(--color-border);
-      border-radius: 4px;
+      padding: 8px 10px;
+      border: 1px solid var(--color-border-strong);
+      border-radius: var(--radius-sm);
       font-size: 13px;
       font-family: var(--font-main);
-      background: #fff;
+      background: rgba(255,255,255,0.92);
     }
     select[multiple] {
       min-width: 200px;
@@ -329,16 +360,20 @@
       margin-bottom: 8px;
     }
     .btn-export {
-      padding: 5px 12px;
-      border: 1px solid var(--color-border);
-      border-radius: 4px;
-      background: var(--color-surface);
+      padding: 7px 12px;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.92);
       cursor: pointer;
       font-size: 12px;
       color: var(--color-text);
-      transition: background 0.15s;
+      transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
     }
-    .btn-export:hover { background: #e9ecef; }
+    .btn-export:hover {
+      background: rgba(241, 245, 249, 0.98);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-soft);
+    }
     .btn-link {
       border: none;
       background: transparent;
@@ -416,11 +451,11 @@
     }
     .comparison-controls select,
     .comparison-controls input[type="text"] {
-      padding: 8px 12px;
-      border: 1px solid var(--color-border);
-      border-radius: 4px;
+      padding: 10px 12px;
+      border: 1px solid var(--color-border-strong);
+      border-radius: var(--radius-sm);
       font-size: 14px;
-      background: #fff;
+      background: rgba(255,255,255,0.92);
     }
     .comparison-controls input[type="text"] {
       min-width: 240px;
@@ -493,11 +528,105 @@
       overflow: auto;
       padding: 12px;
       border: 1px solid var(--color-border);
-      border-radius: 6px;
+      border-radius: var(--radius-sm);
       background: #fbfbfc;
       white-space: pre-wrap;
       word-break: break-all;
       line-height: 1.45;
+    }
+    .control-button {
+      padding: 8px 16px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 999px;
+      background: linear-gradient(180deg, #fefefe 0%, #edf2f7 100%);
+      color: var(--color-text);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+    .control-button:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-soft);
+      background: linear-gradient(180deg, #ffffff 0%, #e5edf8 100%);
+    }
+    .control-inline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .control-inline label {
+      font-size: 12px;
+      color: var(--color-neutral);
+      font-weight: 600;
+    }
+    .radio-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .radio-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 12px;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.92);
+      font-size: 12px;
+      color: var(--color-text-muted);
+      cursor: pointer;
+      transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .radio-chip input {
+      accent-color: var(--color-tab-active);
+    }
+    .radio-chip:has(input:checked) {
+      color: var(--color-tab-active);
+      border-color: rgba(37, 99, 235, 0.26);
+      background: rgba(219, 234, 254, 0.92);
+      box-shadow: var(--shadow-soft);
+    }
+    .checkbox-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--color-text-muted);
+    }
+    .subtle-note {
+      margin-top: 12px;
+      font-size: 13px;
+      line-height: 1.65;
+      color: var(--color-text-muted);
+      background: rgba(248, 250, 252, 0.92);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+    }
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .search-meta-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .empty-message {
+      padding: 20px;
+      color: var(--color-text-muted);
+      background: rgba(248, 250, 252, 0.94);
+      border: 1px dashed var(--color-border-strong);
+      border-radius: var(--radius-md);
     }
   </style>
 </head>
@@ -584,12 +713,12 @@
     <h2 class="section-title">Taxonomic Hierarchy (Sankey)</h2>
     <div class="plot-card">
       <h3>Domain → Phylum → Class → Order → Family → Genus → Species</h3>
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+      <div class="control-inline">
         <label style="font-size:12px; color:var(--color-neutral);">Chart Height:</label>
         <input type="range" id="sankey-height-slider" min="500" max="5000" step="100" value="1500" style="width:200px;"
                oninput="document.getElementById('sankey-height-val').textContent=this.value+'px'">
         <span id="sankey-height-val" style="font-size:12px; color:var(--color-neutral);">1500px</span>
-        <button onclick="resizeSankey('sankey-plot', document.getElementById('sankey-height-slider').value)" style="padding:2px 12px; font-size:12px; cursor:pointer; border:1px solid var(--color-border); border-radius:4px; background:var(--color-primary); color:white;">Apply</button>
+        <button class="control-button" onclick="resizeSankey('sankey-plot', document.getElementById('sankey-height-slider').value)">Apply</button>
       </div>
       <div class="chart-export-row" data-plot-target="sankey-plot"></div>
       <div id="sankey-plot" class="plotly-div" style="min-height:800px"></div>
@@ -632,18 +761,39 @@
           {% endfor %}
         </select>
       </div>
+
+      <div class="ctrl-group">
+        <label>Sankey Ranks</label>
+        <div class="radio-group" id="taxonomy-rank-group">
+          {% for rank in data.taxonomy_available_ranks %}
+          <label class="radio-chip">
+            <input type="radio" name="taxonomy-rank" value="{{ rank }}" {% if loop.last %}checked{% endif %}>
+            <span>Through {{ rank | title }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
     </div>
 
     <!-- Export buttons -->
     <div class="chart-export-row" data-plot-target="taxonomy-chart"></div>
 
     <!-- Chart height control (Sankey only) -->
-    <div id="taxonomy-height-control" style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-      <label style="font-size:12px; color:var(--color-neutral);">Sankey Height:</label>
-      <input type="range" id="taxonomy-height-slider" min="500" max="5000" step="100" value="1500" style="width:200px;"
-             oninput="document.getElementById('taxonomy-height-val').textContent=this.value+'px'">
-      <span id="taxonomy-height-val" style="font-size:12px; color:var(--color-neutral);">1500px</span>
-      <button onclick="resizeSankey('taxonomy-chart', document.getElementById('taxonomy-height-slider').value)" style="padding:2px 12px; font-size:12px; cursor:pointer; border:1px solid var(--color-border); border-radius:4px; background:var(--color-primary); color:white;">Apply</button>
+    <div id="taxonomy-height-control" class="control-inline">
+      <div id="taxonomy-sankey-size-controls" class="control-inline" style="margin-bottom:0;">
+        <label>Sankey Height:</label>
+        <input type="range" id="taxonomy-height-slider" min="500" max="5000" step="100" value="1500" style="width:200px;"
+               oninput="document.getElementById('taxonomy-height-val').textContent=this.value+'px'">
+        <span id="taxonomy-height-val" style="font-size:12px; color:var(--color-neutral);">1500px</span>
+        <button class="control-button" onclick="applyTaxonomyControls()">Apply</button>
+      </div>
+      <div id="taxonomy-tree-size-controls" class="control-inline" style="display:none; margin-bottom:0;">
+        <label>Treemap / Sunburst Height:</label>
+        <input type="range" id="taxonomy-tree-height-slider" min="400" max="2200" step="50" value="900" style="width:220px;"
+               oninput="document.getElementById('taxonomy-tree-height-val').textContent=this.value+'px'">
+        <span id="taxonomy-tree-height-val" style="font-size:12px; color:var(--color-neutral);">900px</span>
+        <button class="control-button" onclick="applyTaxonomyControls()">Apply</button>
+      </div>
     </div>
     <!-- Chart area -->
     <div class="plot-card" style="padding:12px;">
@@ -667,6 +817,9 @@
         <h3>Coverage Heatmap (Contig x Sample) - log10(mean coverage + 1)</h3>
         <div class="chart-export-row" data-plot-target="coverage-heatmap-plot"></div>
         <div id="coverage-heatmap-plot" class="plotly-div" style="min-height:600px"></div>
+        <div class="subtle-note">
+          This heatmap shows the log10-transformed mean read depth per contig per sample. Higher values (red) indicate more sequencing reads mapped to the contig in that sample. Contigs with consistent coverage across samples suggest stable viral populations, while sample-specific coverage may indicate differential infection or contamination.
+        </div>
       </div>
     </div>
 
@@ -716,31 +869,37 @@
     </p>
 
     <div class="comparison-controls">
-      <select id="comparison-level" aria-label="Comparison level" onchange="renderComparisonView()">
-        <option value="domain">By Domain</option>
-        <option value="phylum">By Phylum</option>
-        <option value="class">By Class</option>
-        <option value="order">By Order</option>
-        <option value="family" selected>By Family</option>
-        <option value="genus">By Genus</option>
-        <option value="species">By Species</option>
-        <option value="contig">By Contig</option>
-      </select>
+      <div class="radio-group" id="comparison-level-group" aria-label="Comparison level">
+        {% for rank in data.comparison.available_ranks %}
+        <label class="radio-chip">
+          <input type="radio" name="comparison-level" value="{{ rank }}" {% if rank == "family" %}checked{% endif %}>
+          <span>{{ rank | title }}</span>
+        </label>
+        {% endfor %}
+        <label class="radio-chip">
+          <input type="radio" name="comparison-level" value="contig">
+          <span>Contig</span>
+        </label>
+      </div>
       <input type="text" id="comparison-search" placeholder="Filter by name..." aria-label="Filter comparison rows">
+      <label class="checkbox-inline">
+        <input type="checkbox" id="comparison-hide-unclassified">
+        <span>Hide Unclassified</span>
+      </label>
     </div>
 
     <div id="comparison-meta" class="comparison-meta"></div>
+
+    <div class="plot-card" style="margin-bottom:20px;">
+      <div class="chart-export-row" data-plot-target="comparison-chart"></div>
+      <div id="comparison-chart" style="width:100%;height:500px;"></div>
+    </div>
 
     <div id="comparison-table-container" class="table-wrapper">
       <table class="data-table" id="comparison-table" aria-label="Sample comparison table">
         <thead id="comparison-thead"></thead>
         <tbody id="comparison-tbody"></tbody>
       </table>
-    </div>
-
-    <div class="plot-card" style="margin-top:20px;">
-      <div class="chart-export-row" data-plot-target="comparison-chart"></div>
-      <div id="comparison-chart" style="width:100%;height:500px;"></div>
     </div>
   </section>
 
@@ -775,7 +934,20 @@
         {% endfor %}
       </select>
 
-      <button onclick="clearSearchFilters()">Clear</button>
+      <select id="search-page-size" onchange="updateSearchPageSize()" aria-label="Rows per page">
+        <option value="30" selected>30 rows</option>
+        <option value="50">50 rows</option>
+        <option value="100">100 rows</option>
+        <option value="200">200 rows</option>
+        <option value="1000">1000 rows</option>
+      </select>
+
+      <label class="checkbox-inline">
+        <input type="checkbox" id="search-hide-unclassified" onchange="filterSearchV2()">
+        <span>Hide Unclassified</span>
+      </label>
+
+      <button class="control-button" onclick="clearSearchFilters()">Clear</button>
     </div>
 
     <div class="table-wrapper">
@@ -786,7 +958,10 @@
         </tbody>
       </table>
     </div>
-    <div id="search-count" style="margin-top:10px;color:var(--color-neutral);font-size:12px;"></div>
+    <div class="pagination-bar">
+      <div id="search-count" style="color:var(--color-neutral);font-size:12px;"></div>
+      <button id="search-load-more" class="control-button" type="button" onclick="loadMoreSearchRows()">Load More</button>
+    </div>
 
   </section>
 
@@ -916,14 +1091,25 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     "#9467BD", "#8C564B", "#7F7F7F"
   ];
   var ICTV_COLORS = D.ictv_family_colors || {};
+  var TAXONOMY_RANKS = D.taxonomy_available_ranks || ["domain", "phylum", "class", "order", "family", "genus", "species"];
+  var _currentViz = "sankey";
+  var _currentSample = "all";
+  var _activeTaxonomyRank = TAXONOMY_RANKS.length ? TAXONOMY_RANKS[TAXONOMY_RANKS.length - 1] : "species";
+  var _comparisonSort = { key: "total_rpm", asc: false };
+  var _tableRows = [];
+  var _allRows = [];
+  var _sortAsc = {};
+  var _searchState = { pageSize: 30, visible: 30 };
+  var _STATIC_KEYS = ["seq_id", "length", "family", "genus", "species",
+                      "detection_method", "detection_confidence", "best_hit", "pident"];
 
   function baseLayout(title) {
     return {
       title: { text: title, font: { size: 14, color: "#212529" } },
-      paper_bgcolor: "#F8F9FA",
-      plot_bgcolor: "#F8F9FA",
-      font: { family: "Roboto, Arial, sans-serif", size: 12, color: "#212529" },
-      margin: { t: 50, r: 20, b: 60, l: 60 }
+      paper_bgcolor: "rgba(255,255,255,0)",
+      plot_bgcolor: "rgba(255,255,255,0)",
+      font: { family: "-apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif", size: 12, color: "#0f172a" },
+      margin: { t: 60, r: 20, b: 60, l: 60 }
     };
   }
 
@@ -940,6 +1126,20 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         "<button class='btn-export' type='button' data-export='svg' data-target='" + _esc(target) + "'>Export SVG</button>" +
         "<button class='btn-export' type='button' data-export='png' data-target='" + _esc(target) + "'>Export PNG</button>";
     });
+  }
+
+  function _esc(v) {
+    return v != null ? String(v)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;") : "";
+  }
+
+  function isUnclassifiedLabel(value) {
+    var v = String(value || "").trim().toLowerCase();
+    return !v || v === "unclassified" || v === "unknown" || v === "nan" || v === "n/a" || v === "none";
   }
 
   document.addEventListener("click", function (event) {
@@ -1038,8 +1238,163 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   /* Taxonomy tab: Sankey / Sunburst / Treemap                               */
   /* @TASK T5.2 - Taxonomy tab interactive renderer                          */
   /* ---------------------------------------------------------------------- */
-  var _currentViz = "sankey";
-  var _currentSample = "all";
+  function getSelectedTaxonomyFamilies() {
+    var select = document.getElementById("family-filter");
+    if (!select) return [];
+    return Array.from(select.selectedOptions || []).map(function (opt) {
+      return String(opt.value || "").toLowerCase();
+    }).filter(Boolean);
+  }
+
+  function getSelectedTaxonomyRank() {
+    var selected = document.querySelector("input[name='taxonomy-rank']:checked");
+    return selected ? selected.value : _activeTaxonomyRank;
+  }
+
+  function filterSankeyByRank(sankeyData, maxRank, selectedFamilies) {
+    if (!sankeyData || !sankeyData.nodes || !sankeyData.nodes.length) return sankeyData;
+    var allowedRanks = TAXONOMY_RANKS.slice(0, Math.max(TAXONOMY_RANKS.indexOf(maxRank) + 1, 0));
+    var keepNode = {};
+    (sankeyData.node_ranks || []).forEach(function (rank, idx) {
+      keepNode[idx] = allowedRanks.indexOf(rank) !== -1;
+    });
+    if ((selectedFamilies || []).length) {
+      var familyTargets = {};
+      var forward = {};
+      var reverse = {};
+      (sankeyData.sources || []).forEach(function (sourceIdx, linkIdx) {
+        var targetIdx = (sankeyData.targets || [])[linkIdx];
+        forward[sourceIdx] = forward[sourceIdx] || [];
+        reverse[targetIdx] = reverse[targetIdx] || [];
+        forward[sourceIdx].push(targetIdx);
+        reverse[targetIdx].push(sourceIdx);
+      });
+      (sankeyData.node_ranks || []).forEach(function (rank, idx) {
+        if (rank === "family" && selectedFamilies.indexOf(String((sankeyData.nodes || [])[idx] || "").toLowerCase()) !== -1) {
+          familyTargets[idx] = true;
+        }
+      });
+      var branchKeep = {};
+      function walk(startIdx, graph) {
+        var stack = [startIdx];
+        while (stack.length) {
+          var idx = stack.pop();
+          if (branchKeep[idx]) continue;
+          branchKeep[idx] = true;
+          (graph[idx] || []).forEach(function (nextIdx) { stack.push(nextIdx); });
+        }
+      }
+      Object.keys(familyTargets).forEach(function (idx) {
+        var i = Number(idx);
+        walk(i, forward);
+        walk(i, reverse);
+      });
+      Object.keys(keepNode).forEach(function (idx) {
+        keepNode[idx] = keepNode[idx] && !!branchKeep[idx];
+      });
+    }
+    var remap = {};
+    var filteredNodes = [];
+    var filteredKeys = [];
+    var filteredRanks = [];
+    var filteredColors = [];
+    (sankeyData.nodes || []).forEach(function (_, idx) {
+      if (!keepNode[idx]) return;
+      remap[idx] = filteredNodes.length;
+      filteredNodes.push(sankeyData.nodes[idx]);
+      filteredKeys.push((sankeyData.node_keys || [])[idx]);
+      filteredRanks.push((sankeyData.node_ranks || [])[idx]);
+      filteredColors.push((sankeyData.node_colors || [])[idx]);
+    });
+    var sources = [];
+    var targets = [];
+    var values = [];
+    (sankeyData.sources || []).forEach(function (sourceIdx, linkIdx) {
+      var targetIdx = (sankeyData.targets || [])[linkIdx];
+      if (!(keepNode[sourceIdx] && keepNode[targetIdx])) return;
+      sources.push(remap[sourceIdx]);
+      targets.push(remap[targetIdx]);
+      values.push((sankeyData.values || [])[linkIdx]);
+    });
+    return {
+      nodes: filteredNodes,
+      node_keys: filteredKeys,
+      node_ranks: filteredRanks,
+      node_colors: filteredColors,
+      sources: sources,
+      targets: targets,
+      values: values,
+      available_ranks: sankeyData.available_ranks || TAXONOMY_RANKS
+    };
+  }
+
+  function filterTreeData(treeData, maxRank, selectedFamilies) {
+    if (!treeData || !treeData.ids || !treeData.ids.length) return treeData;
+    var maxDepth = TAXONOMY_RANKS.indexOf(maxRank);
+    var familyFilter = (selectedFamilies || []).slice();
+    var keepNode = {};
+    var ids = treeData.ids || [];
+    var idToIndex = {};
+    ids.forEach(function (id, idx) { idToIndex[id] = idx; });
+    ids.forEach(function (id, idx) {
+      var parts = String(id || "").split("/");
+      var depth = parts.length - 1;
+      if (maxDepth >= 0 && depth > maxDepth) return;
+      if (familyFilter.length) {
+        var familyRankIndex = TAXONOMY_RANKS.indexOf("family");
+        var familyValue = parts.length > familyRankIndex ? String(parts[familyRankIndex] || "").toLowerCase() : "";
+        if (familyValue && familyFilter.indexOf(familyValue) === -1 && depth >= familyRankIndex) return;
+      }
+      keepNode[idx] = true;
+    });
+    var filteredIds = [];
+    var filteredLabels = [];
+    var filteredParents = [];
+    var filteredValues = [];
+    var filteredColors = [];
+    var filteredRanks = [];
+    ids.forEach(function (id, idx) {
+      if (!keepNode[idx]) return;
+      var parent = (treeData.parents || [])[idx] || "";
+      if (parent && idToIndex[parent] != null && !keepNode[idToIndex[parent]]) return;
+      filteredIds.push(id);
+      filteredLabels.push((treeData.labels || [])[idx]);
+      filteredParents.push(parent && keepNode[idToIndex[parent]] ? parent : "");
+      filteredValues.push((treeData.values || [])[idx]);
+      filteredColors.push((treeData.colors || [])[idx]);
+      filteredRanks.push((treeData.ranks || [])[idx]);
+    });
+    return {
+      ids: filteredIds,
+      labels: filteredLabels,
+      parents: filteredParents,
+      values: filteredValues,
+      colors: filteredColors,
+      ranks: filteredRanks,
+      available_ranks: treeData.available_ranks || TAXONOMY_RANKS
+    };
+  }
+
+  function taxonomySankeyHeight(sankeyData) {
+    var active = new Set([].concat(sankeyData.sources || [], sankeyData.targets || []));
+    return Math.max(700, Math.min(3000, active.size * 28));
+  }
+
+  function applyTaxonomyControls() {
+    _activeTaxonomyRank = getSelectedTaxonomyRank();
+    renderTaxonomy();
+  }
+  window.applyTaxonomyControls = applyTaxonomyControls;
+
+  function updateTaxonomyHeightControls() {
+    var hCtrl = document.getElementById("taxonomy-height-control");
+    var sankeyCtrl = document.getElementById("taxonomy-sankey-size-controls");
+    var treeCtrl = document.getElementById("taxonomy-tree-size-controls");
+    if (!hCtrl || !sankeyCtrl || !treeCtrl) return;
+    hCtrl.style.display = "flex";
+    sankeyCtrl.style.display = _currentViz === "sankey" ? "flex" : "none";
+    treeCtrl.style.display = _currentViz === "sankey" ? "none" : "flex";
+  }
 
   function renderTaxonomy() {
     if (typeof Plotly === "undefined") {
@@ -1050,6 +1405,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
 
     var chartDiv = document.getElementById("taxonomy-chart");
     var sankeyData, treeData;
+    var selectedFamilies = getSelectedTaxonomyFamilies();
 
     if (_currentSample === "all") {
       sankeyData = D.sankey_all || D.sankey;
@@ -1062,15 +1418,16 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
 
     var sampleLabel = _currentSample === "all" ? "All Samples" : _currentSample;
 
-    // Show height control only for Sankey
-    var hCtrl = document.getElementById("taxonomy-height-control");
-    if (hCtrl) hCtrl.style.display = _currentViz === "sankey" ? "flex" : "none";
+    sankeyData = filterSankeyByRank(sankeyData, _activeTaxonomyRank, selectedFamilies);
+    treeData = filterTreeData(treeData, _activeTaxonomyRank, selectedFamilies);
+    updateTaxonomyHeightControls();
 
     if (_currentViz === "sankey") {
       if (!sankeyData || !sankeyData.nodes || sankeyData.nodes.length === 0) {
         chartDiv.innerHTML = "<p style='padding:20px;color:#7f7f7f'>No Sankey data available.</p>";
         return;
       }
+      var h = Number((document.getElementById("taxonomy-height-slider") || {}).value || taxonomySankeyHeight(sankeyData));
       Plotly.react(chartDiv, [{
         type: "sankey",
         orientation: "h",
@@ -1092,21 +1449,18 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
             return "rgba(" + parseInt(m[1], 16) + "," + parseInt(m[2], 16) + "," + parseInt(m[3], 16) + ",0.25)";
           })
         }
-      }], (function() {
-        var at = new Set([...(sankeyData.sources || []), ...(sankeyData.targets || [])]);
-        var h = Math.max(700, Math.min(3000, at.size * 28));
-        chartDiv.style.minHeight = h + "px";
-        return Object.assign(baseLayout("Taxonomic Hierarchy — " + sampleLabel), {
-          margin: { t: 50, r: 250, b: 20, l: 20 },
-          height: h
-        });
-      })(), PLOTLY_CONFIG);
+      }], Object.assign(baseLayout("Taxonomic Hierarchy — " + sampleLabel), {
+        margin: { t: 60, r: 250, b: 20, l: 20 },
+        height: h
+      }), PLOTLY_CONFIG);
+      chartDiv.style.minHeight = h + "px";
 
     } else if (_currentViz === "sunburst") {
       if (!treeData || !treeData.ids || treeData.ids.length === 0) {
         chartDiv.innerHTML = "<p style='padding:20px;color:#7f7f7f'>No sunburst data available.</p>";
         return;
       }
+      var sunburstHeight = Number((document.getElementById("taxonomy-tree-height-slider") || {}).value || 900);
       Plotly.react(chartDiv, [{
         type: "sunburst",
         ids:          treeData.ids,
@@ -1122,8 +1476,8 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         textfont: { size: 14 },
         marker: { colors: treeData.colors || [] }
       }], Object.assign(baseLayout("Taxonomy Sunburst — " + sampleLabel), {
-        margin: { l: 0, r: 0, t: 50, b: 0 },
-        height: 700
+        margin: { l: 0, r: 0, t: 60, b: 0 },
+        height: sunburstHeight
       }), PLOTLY_CONFIG);
 
     } else if (_currentViz === "treemap") {
@@ -1131,6 +1485,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         chartDiv.innerHTML = "<p style='padding:20px;color:#7f7f7f'>No treemap data available.</p>";
         return;
       }
+      var treemapHeight = Number((document.getElementById("taxonomy-tree-height-slider") || {}).value || 900);
       Plotly.react(chartDiv, [{
         type: "treemap",
         ids:          treeData.ids,
@@ -1142,7 +1497,8 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         hovertemplate: "<b>%{label}</b><br>RPM: %{value:.1f}<br>%{percentEntry:.1%}<extra></extra>",
         marker: { colors: treeData.colors || [] }
       }], Object.assign(baseLayout("Taxonomy Treemap — " + sampleLabel), {
-        margin: { l: 10, r: 10, t: 50, b: 10 }
+        margin: { l: 10, r: 10, t: 60, b: 10 },
+        height: treemapHeight
       }), PLOTLY_CONFIG);
     }
   }
@@ -1174,19 +1530,15 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   var familyFilterEl = document.getElementById("family-filter");
   if (familyFilterEl) {
     familyFilterEl.addEventListener("change", function () {
-      // Family filter is informational for future server-side use;
-      // client-side: simply re-render to reflect selection intent.
       renderTaxonomy();
     });
   }
 
-  var comparisonLevelEl = document.getElementById("comparison-level");
-  if (comparisonLevelEl) {
-    comparisonLevelEl.addEventListener("change", function () {
-      _comparisonSort = { key: "total_rpm", asc: false };
-      renderComparisonView();
+  document.querySelectorAll("input[name='taxonomy-rank']").forEach(function (input) {
+    input.addEventListener("change", function () {
+      _activeTaxonomyRank = this.value;
     });
-  }
+  });
 
   var comparisonSearchEl = document.getElementById("comparison-search");
   if (comparisonSearchEl) {
@@ -1225,6 +1577,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     var pc2Label = "PC2" + (pd.pc2_var != null ? " (" + pd.pc2_var.toFixed(1) + "%)" : "");
 
     var layout = Object.assign(baseLayout("PCoA (Bray-Curtis)"), {
+      margin: { t: 80, r: 20, b: 60, l: 60 },
       xaxis: { title: pc1Label, zeroline: true, zerolinewidth: 1, zerolinecolor: "#dee2e6" },
       yaxis: { title: pc2Label, zeroline: true, zerolinewidth: 1, zerolinecolor: "#dee2e6", scaleanchor: "x" }
     });
@@ -1266,6 +1619,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     });
 
     var layout = Object.assign(baseLayout("Alpha Diversity"), {
+      margin: { t: 80, r: 20, b: 60, l: 60 },
       yaxis: { title: "Value" },
       showlegend: false
     });
@@ -1276,10 +1630,8 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   /* ---------------------------------------------------------------------- */
   /* Comparison tab                                                          */
   /* ---------------------------------------------------------------------- */
-  var _comparisonSort = { key: "total_rpm", asc: false };
-
   function comparisonDataset() {
-    var levelEl = document.getElementById("comparison-level");
+    var levelEl = document.querySelector("input[name='comparison-level']:checked");
     var level = levelEl ? levelEl.value : "family";
     if (!D.comparison) return [];
     if (level === "contig") return D.comparison.contig || [];
@@ -1302,7 +1654,9 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     var rows = comparisonDataset();
     var samples = comparisonSamples();
     var query = ((document.getElementById("comparison-search") || {}).value || "").toLowerCase();
+    var hideUnclassified = !!((document.getElementById("comparison-hide-unclassified") || {}).checked);
     var filtered = rows.filter(function (row) {
+      if (hideUnclassified && (isUnclassifiedLabel(row.name) || isUnclassifiedLabel(row.family))) return false;
       if (!query) return true;
       return String(row.name || "").toLowerCase().includes(query) ||
              String(row.family || "").toLowerCase().includes(query);
@@ -1321,7 +1675,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   }
 
   function renderComparisonTable(rows, samples) {
-    var levelEl = document.getElementById("comparison-level");
+    var levelEl = document.querySelector("input[name='comparison-level']:checked");
     var level = levelEl ? levelEl.value : "family";
     var thead = document.getElementById("comparison-thead");
     var tbody = document.getElementById("comparison-tbody");
@@ -1392,7 +1746,8 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
       barmode: "group",
       xaxis: { title: "Taxon / Contig", tickangle: -30, automargin: true },
       yaxis: { title: "RPM" },
-      legend: { orientation: "h", y: -0.18 }
+      legend: { orientation: "h", y: -0.18 },
+      margin: { t: 70, r: 20, b: 90, l: 60 }
     }), PLOTLY_CONFIG);
   }
 
@@ -1413,27 +1768,23 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     renderComparisonView();
   };
 
+  document.querySelectorAll("input[name='comparison-level']").forEach(function (input) {
+    input.addEventListener("change", function () {
+      _comparisonSort = { key: "total_rpm", asc: false };
+      renderComparisonView();
+    });
+  });
+  var comparisonHideUnclassifiedEl = document.getElementById("comparison-hide-unclassified");
+  if (comparisonHideUnclassifiedEl) {
+    comparisonHideUnclassifiedEl.addEventListener("change", function () {
+      renderComparisonView();
+    });
+  }
+
   /* ---------------------------------------------------------------------- */
   /* Search v2: table render + filter (search_rows_v2 + per-sample cols)     */
   /* @TASK T5.2 - Search v2: Contig | Length | Family | Detection | Confidence | Best Hit | per-sample Cov/RPM */
   /* ---------------------------------------------------------------------- */
-  var _tableRows   = [];   // holds current filtered set for sorting
-  var _allRows     = [];   // full unfiltered dataset
-  var _sortAsc     = {};   // sort direction per column index
-
-  // Static column keys used for sorting (per-sample cols appended dynamically)
-  var _STATIC_KEYS = ["seq_id", "length", "family", "genus", "species",
-                      "detection_method", "detection_confidence", "best_hit", "pident"];
-
-  function _esc(v) {
-    return v != null ? String(v)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;") : "";
-  }
-
   function getFamilyColor(familyName) {
     if (!familyName) return "#CCCCCC";
     return ICTV_COLORS[familyName] || "#CCCCCC";
@@ -1501,42 +1852,70 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     return "badge-orange";
   }
 
+  function rowIsUnclassified(row) {
+    return isUnclassifiedLabel(row.family) &&
+           isUnclassifiedLabel(row.genus) &&
+           isUnclassifiedLabel(row.species);
+  }
+
+  function updateSearchHeader(samples) {
+    var thead = document.getElementById("search-thead");
+    if (!thead) return;
+    var row1 = "<tr>";
+    row1 += "<th rowspan='2' onclick=\"sortTableV2(0)\">Contig</th>";
+    row1 += "<th rowspan='2' onclick=\"sortTableV2(1)\">Length</th>";
+    row1 += "<th rowspan='2' onclick=\"sortTableV2(2)\">Family</th>";
+    row1 += "<th rowspan='2' onclick=\"sortTableV2(3)\">Genus</th>";
+    row1 += "<th rowspan='2' onclick=\"sortTableV2(4)\">Species</th>";
+    row1 += "<th rowspan='2' onclick=\"sortTableV2(5)\">Detection</th>";
+    row1 += "<th rowspan='2' onclick=\"sortTableV2(6)\">Confidence</th>";
+    row1 += "<th rowspan='2' onclick=\"sortTableV2(7)\">Best Hit</th>";
+    row1 += "<th rowspan='2' onclick=\"sortTableV2(8)\">%Ident</th>";
+    samples.forEach(function (s) {
+      row1 += "<th colspan='2' style='text-align:center;'>" + _esc(s) + "</th>";
+    });
+    row1 += "</tr>";
+
+    var row2 = "<tr>";
+    samples.forEach(function (s, si) {
+      var base = 9 + si * 2;
+      row2 += "<th onclick=\"sortTableV2(" + base + ")\">Cov</th>";
+      row2 += "<th onclick=\"sortTableV2(" + (base + 1) + ")\">RPM</th>";
+    });
+    row2 += "</tr>";
+    thead.innerHTML = row1 + row2;
+  }
+
+  function currentSearchRows() {
+    return _tableRows.slice(0, _searchState.visible);
+  }
+
+  function updateSearchMeta(totalRows) {
+    var counter = document.getElementById("search-count");
+    var loadMore = document.getElementById("search-load-more");
+    if (counter) {
+      var shown = Math.min(totalRows, _searchState.visible);
+      counter.textContent = shown + " of " + totalRows + " record(s) shown";
+    }
+    if (loadMore) {
+      loadMore.style.display = totalRows > _searchState.visible ? "inline-flex" : "none";
+    }
+  }
+
   function renderSearchTableV2() {
     var rows    = D.search_rows_v2 || [];
     var samples = D.samples || [];
 
     _allRows   = rows;
     _tableRows = rows;
-
-    // Build dynamic header
-    var thead = document.getElementById("search-thead");
-    if (thead) {
-      var headerRow = "<tr>";
-      headerRow += "<th onclick=\"sortTableV2(0)\">Contig</th>";
-      headerRow += "<th onclick=\"sortTableV2(1)\">Length</th>";
-      headerRow += "<th onclick=\"sortTableV2(2)\">Family</th>";
-      headerRow += "<th onclick=\"sortTableV2(3)\">Genus</th>";
-      headerRow += "<th onclick=\"sortTableV2(4)\">Species</th>";
-      headerRow += "<th onclick=\"sortTableV2(5)\">Detection</th>";
-      headerRow += "<th onclick=\"sortTableV2(6)\">Confidence</th>";
-      headerRow += "<th onclick=\"sortTableV2(7)\">Best Hit</th>";
-      headerRow += "<th onclick=\"sortTableV2(8)\">%Ident</th>";
-      samples.forEach(function (s, si) {
-        var base = 9 + si * 2;
-        headerRow += "<th onclick=\"sortTableV2(" + base + ")\">" + _esc(s) + " Cov</th>";
-        headerRow += "<th onclick=\"sortTableV2(" + (base + 1) + ")\">" + _esc(s) + " RPM</th>";
-      });
-      headerRow += "</tr>";
-      thead.innerHTML = headerRow;
-    }
-
-    buildSearchDOMV2(rows, samples);
+    _searchState.visible = _searchState.pageSize;
+    updateSearchHeader(samples);
+    buildSearchDOMV2(currentSearchRows(), samples, _tableRows.length);
   }
 
-  function buildSearchDOMV2(rows, samples) {
+  function buildSearchDOMV2(rows, samples, totalRows) {
     if (!samples) { samples = D.samples || []; }
     var tbody   = document.getElementById("search-tbody");
-    var counter = document.getElementById("search-count");
     if (!tbody) return;
 
     var html = "";
@@ -1561,7 +1940,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
       html += "</tr>";
     });
     tbody.innerHTML = html;
-    if (counter) { counter.textContent = rows.length + " record(s) shown"; }
+    updateSearchMeta(totalRows == null ? rows.length : totalRows);
   }
 
   window.filterSearchV2 = function () {
@@ -1569,8 +1948,10 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     var family     = (document.getElementById("family-filter-search").value || "").toLowerCase();
     var confidence = (document.getElementById("confidence-filter").value || "").toLowerCase();
     var method     = (document.getElementById("method-filter").value || "").toLowerCase();
+    var hideUnclassified = !!((document.getElementById("search-hide-unclassified") || {}).checked);
 
     var filtered = _allRows.filter(function (row) {
+      if (hideUnclassified && rowIsUnclassified(row)) return false;
       var matchQ = !q ||
         (row.seq_id         && row.seq_id.toLowerCase().includes(q)) ||
         (row.family         && row.family.toLowerCase().includes(q)) ||
@@ -1585,7 +1966,8 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
       return matchQ && matchFamily && matchConf && matchMethod;
     });
     _tableRows = filtered;
-    buildSearchDOMV2(filtered, D.samples || []);
+    _searchState.visible = _searchState.pageSize;
+    buildSearchDOMV2(currentSearchRows(), D.samples || [], filtered.length);
   };
 
   window.clearSearchFilters = function () {
@@ -1593,8 +1975,22 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     document.getElementById("family-filter-search").value = "";
     document.getElementById("confidence-filter").value    = "";
     document.getElementById("method-filter").value        = "";
+    document.getElementById("search-hide-unclassified").checked = false;
     _tableRows = _allRows;
-    buildSearchDOMV2(_allRows, D.samples || []);
+    _searchState.visible = _searchState.pageSize;
+    buildSearchDOMV2(currentSearchRows(), D.samples || [], _allRows.length);
+  };
+
+  window.updateSearchPageSize = function () {
+    var pageSizeEl = document.getElementById("search-page-size");
+    _searchState.pageSize = Number(pageSizeEl ? pageSizeEl.value : 30) || 30;
+    _searchState.visible = _searchState.pageSize;
+    buildSearchDOMV2(currentSearchRows(), D.samples || [], _tableRows.length);
+  };
+
+  window.loadMoreSearchRows = function () {
+    _searchState.visible += _searchState.pageSize;
+    buildSearchDOMV2(currentSearchRows(), D.samples || [], _tableRows.length);
   };
 
   /* ---------------------------------------------------------------------- */
@@ -1629,7 +2025,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         : String(vb).localeCompare(String(va));
     });
     _tableRows = sorted;
-    buildSearchDOMV2(sorted, samples);
+    buildSearchDOMV2(currentSearchRows(), samples, _tableRows.length);
   };
 
   // Keep old names as no-ops in case anything references them (backward compat)
@@ -1895,7 +2291,12 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
 
   function renderHostRemoval() {
     var hr = D.host_removal;
-    if (!hr || !hr.samples || hr.samples.length === 0) {
+    if (!hr || hr.status === "disabled") {
+      document.getElementById("host-removal-plot").innerHTML =
+        "<div class='empty-message'>" + _esc((hr && hr.message) || "No host removal data available.") + "</div>";
+      return;
+    }
+    if (!hr.samples || hr.samples.length === 0) {
       document.getElementById("host-removal-plot").innerHTML =
         "<p style='padding:20px;color:#7f7f7f'>No host removal data available.</p>";
       return;
