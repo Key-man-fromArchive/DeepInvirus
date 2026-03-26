@@ -1,3 +1,5 @@
+// @TASK T2.4 - metaSPAdes co-assembly
+// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
 // De novo assembly using metaSPAdes (per-sample, legacy)
 
 process METASPADES {

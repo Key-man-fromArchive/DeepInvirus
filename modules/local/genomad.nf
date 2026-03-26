@@ -1,9 +1,11 @@
-// @TASK T3.1 - ML-based virus detection using geNomad
+// @TASK T3.1 - geNomad virus detection
 // @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
+// ML-based virus detection using geNomad
 
 process GENOMAD_DETECT {
     tag "$meta.id"
     label 'process_genomad'
+    publishDir "${params.outdir}/detection/genomad", mode: 'copy'
 
     input:
     tuple val(meta), path(contigs)

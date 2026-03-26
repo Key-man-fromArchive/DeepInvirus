@@ -23,6 +23,8 @@ BIN_DIR = PROJECT_ROOT / "bin"
 PARSE_DIAMOND_SCRIPT = BIN_DIR / "parse_diamond.py"
 MODULES_DIR = PROJECT_ROOT / "modules" / "local"
 DIAMOND_NF = MODULES_DIR / "diamond.nf"
+SUBWORKFLOWS_DIR = PROJECT_ROOT / "subworkflows"
+DETECTION_NF = SUBWORKFLOWS_DIR / "detection.nf"
 
 # Expected TSV columns from parse_diamond.py
 EXPECTED_COLUMNS = [
@@ -78,6 +80,21 @@ def mock_blast6_multi_taxid(tmp_dir: Path) -> Path:
         contig_M\tUniRef90_M00001\t90.0\t400\t40\t0\t1\t1200\t1\t400\t1e-60\t900\t111;222;333
     """)
     tsv_path = tmp_dir / "multi_taxid.diamond.tsv"
+    tsv_path.write_text(content)
+    return tsv_path
+
+
+@pytest.fixture
+def mock_blast6_no_staxids(tmp_dir: Path) -> Path:
+    """Create a blast6 TSV with only 12 columns (no staxids).
+
+    This simulates Diamond output when no taxonomy DB is available.
+    """
+    content = textwrap.dedent("""\
+        contig_1\tUniRef90_P12345\t95.0\t500\t25\t0\t1\t1500\t1\t500\t1e-50\t800
+        contig_2\tUniRef90_Q22222\t88.5\t400\t46\t0\t1\t1200\t1\t400\t1e-40\t650
+    """)
+    tsv_path = tmp_dir / "no_staxids.diamond.tsv"
     tsv_path.write_text(content)
     return tsv_path
 
@@ -304,6 +321,64 @@ class TestParseDiamondParsing:
         assert rows[0]["taxid"] == "111"
 
     @pytest.mark.unit
+    def test_parse_blast6_no_staxids(self, mock_blast6_no_staxids: Path) -> None:
+        """parse_blast6() must accept 12-column input (no staxids) gracefully."""
+        mod = self._import_parse_diamond()
+        hits = mod.parse_blast6(mock_blast6_no_staxids)
+
+        assert len(hits) == 2
+        assert hits[0]["qseqid"] == "contig_1"
+        # staxids should default to "0" when absent
+        assert hits[0]["staxids"] == "0"
+        assert hits[1]["staxids"] == "0"
+
+    @pytest.mark.unit
+    def test_no_staxids_detection_output(self, mock_blast6_no_staxids: Path) -> None:
+        """12-column input must produce valid detection TSV with taxid='0'."""
+        mod = self._import_parse_diamond()
+        hits = mod.parse_blast6(mock_blast6_no_staxids)
+        best = mod.extract_best_hits(hits)
+        filtered = mod.filter_by_bitscore(best, min_bitscore=50)
+        rows = mod.to_detection_tsv(filtered)
+
+        assert len(rows) == 2
+        for row in rows:
+            assert row["taxid"] == "0"
+            assert row["detection_method"] == "diamond"
+
+    @pytest.mark.unit
+    def test_cli_no_staxids(
+        self, tmp_dir: Path, mock_blast6_no_staxids: Path
+    ) -> None:
+        """CLI must handle 12-column input (no staxids) without errors."""
+        output_tsv = tmp_dir / "no_staxids_output.tsv"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(PARSE_DIAMOND_SCRIPT),
+                str(mock_blast6_no_staxids),
+                "--output",
+                str(output_tsv),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, (
+            f"parse_diamond.py failed on 12-col input: {result.stderr}"
+        )
+        assert output_tsv.exists()
+
+        with open(output_tsv) as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            rows = list(reader)
+
+        assert len(rows) == 2
+        for row in rows:
+            assert row["taxid"] == "0"
+
+    @pytest.mark.unit
     def test_empty_input(self, mock_blast6_empty: Path) -> None:
         """Empty Diamond output must produce an empty result (no errors)."""
         mod = self._import_parse_diamond()
@@ -449,3 +524,372 @@ class TestParseDiamondParsing:
                         )
                 # detection_method must be 'diamond'
                 assert row["detection_method"] == "diamond"
+
+
+# ---------------------------------------------------------------------------
+# Test: parse_diamond.py --merged-format (skip_ml=true pathway)
+# @TASK A3 - skip_ml Diamond schema 변환 테스트
+# ---------------------------------------------------------------------------
+
+# Expected columns for merged detection format (compatible with merge_results.py)
+MERGED_EXPECTED_COLUMNS = [
+    "seq_id",
+    "length",
+    "detection_method",
+    "detection_score",
+    "taxonomy",
+    "taxid",
+    "subject_id",
+]
+
+
+class TestParseDiamondMergedFormat:
+    """Tests for --merged-format flag that outputs in merge_results.py schema."""
+
+    def _import_parse_diamond(self):
+        """Helper to import parse_diamond module."""
+        original_path = sys.path.copy()
+        try:
+            sys.path.insert(0, str(BIN_DIR))
+            if "parse_diamond" in sys.modules:
+                del sys.modules["parse_diamond"]
+            import parse_diamond
+            return parse_diamond
+        finally:
+            sys.path = original_path
+
+    @pytest.mark.unit
+    def test_to_merged_detection_tsv_columns(self, mock_blast6_tsv: Path) -> None:
+        """to_merged_detection_tsv() must produce rows with merged detection columns."""
+        mod = self._import_parse_diamond()
+        hits = mod.parse_blast6(mock_blast6_tsv)
+        best = mod.extract_best_hits(hits)
+        filtered = mod.filter_by_bitscore(best, min_bitscore=50)
+        rows = mod.to_merged_detection_tsv(filtered)
+
+        assert len(rows) == 2  # contig_1 and contig_2
+        for row in rows:
+            assert set(row.keys()) == set(MERGED_EXPECTED_COLUMNS), (
+                f"Unexpected columns: {set(row.keys())} != {set(MERGED_EXPECTED_COLUMNS)}"
+            )
+
+    @pytest.mark.unit
+    def test_merged_format_detection_method(self, mock_blast6_tsv: Path) -> None:
+        """Merged format must set detection_method='diamond'."""
+        mod = self._import_parse_diamond()
+        hits = mod.parse_blast6(mock_blast6_tsv)
+        best = mod.extract_best_hits(hits)
+        filtered = mod.filter_by_bitscore(best, min_bitscore=50)
+        rows = mod.to_merged_detection_tsv(filtered)
+
+        for row in rows:
+            assert row["detection_method"] == "diamond"
+
+    @pytest.mark.unit
+    def test_merged_format_detection_score_normalized(self, mock_blast6_tsv: Path) -> None:
+        """Merged format detection_score must be normalized bitscore in [0, 1]."""
+        mod = self._import_parse_diamond()
+        hits = mod.parse_blast6(mock_blast6_tsv)
+        best = mod.extract_best_hits(hits)
+        filtered = mod.filter_by_bitscore(best, min_bitscore=50)
+        rows = mod.to_merged_detection_tsv(filtered)
+
+        for row in rows:
+            score = float(row["detection_score"])
+            assert 0.0 <= score <= 1.0, (
+                f"detection_score must be in [0, 1], got {score}"
+            )
+
+    @pytest.mark.unit
+    def test_merged_format_detection_score_values(self, mock_blast6_tsv: Path) -> None:
+        """Merged format detection_score must match bitscore / MAX_BITSCORE."""
+        mod = self._import_parse_diamond()
+        hits = mod.parse_blast6(mock_blast6_tsv)
+        best = mod.extract_best_hits(hits)
+        filtered = mod.filter_by_bitscore(best, min_bitscore=50)
+        rows = mod.to_merged_detection_tsv(filtered)
+
+        by_id = {r["seq_id"]: r for r in rows}
+
+        # contig_1: bitscore=800, normalized=800/1000=0.8
+        assert abs(float(by_id["contig_1"]["detection_score"]) - 0.8) < 1e-4
+        # contig_2: bitscore=650, normalized=650/1000=0.65
+        assert abs(float(by_id["contig_2"]["detection_score"]) - 0.65) < 1e-4
+
+    @pytest.mark.unit
+    def test_merged_format_taxonomy_empty(self, mock_blast6_tsv: Path) -> None:
+        """Merged format taxonomy must be empty (no geNomad in diamond-only mode)."""
+        mod = self._import_parse_diamond()
+        hits = mod.parse_blast6(mock_blast6_tsv)
+        best = mod.extract_best_hits(hits)
+        filtered = mod.filter_by_bitscore(best, min_bitscore=50)
+        rows = mod.to_merged_detection_tsv(filtered)
+
+        for row in rows:
+            assert row["taxonomy"] == ""
+
+    @pytest.mark.unit
+    def test_merged_format_subject_id(self, mock_blast6_tsv: Path) -> None:
+        """Merged format subject_id must match Diamond sseqid."""
+        mod = self._import_parse_diamond()
+        hits = mod.parse_blast6(mock_blast6_tsv)
+        best = mod.extract_best_hits(hits)
+        filtered = mod.filter_by_bitscore(best, min_bitscore=50)
+        rows = mod.to_merged_detection_tsv(filtered)
+
+        by_id = {r["seq_id"]: r for r in rows}
+        assert by_id["contig_1"]["subject_id"] == "UniRef90_P12345"
+        assert by_id["contig_2"]["subject_id"] == "UniRef90_Q22222"
+
+    @pytest.mark.unit
+    def test_merged_format_taxid(self, mock_blast6_tsv: Path) -> None:
+        """Merged format taxid must be extracted from staxids."""
+        mod = self._import_parse_diamond()
+        hits = mod.parse_blast6(mock_blast6_tsv)
+        best = mod.extract_best_hits(hits)
+        filtered = mod.filter_by_bitscore(best, min_bitscore=50)
+        rows = mod.to_merged_detection_tsv(filtered)
+
+        by_id = {r["seq_id"]: r for r in rows}
+        assert by_id["contig_1"]["taxid"] == "12345"
+        assert by_id["contig_2"]["taxid"] == "22222"
+
+    @pytest.mark.unit
+    def test_merged_format_empty_input(self, mock_blast6_empty: Path) -> None:
+        """Merged format must handle empty input gracefully."""
+        mod = self._import_parse_diamond()
+        hits = mod.parse_blast6(mock_blast6_empty)
+        best = mod.extract_best_hits(hits)
+        filtered = mod.filter_by_bitscore(best, min_bitscore=50)
+        rows = mod.to_merged_detection_tsv(filtered)
+        assert rows == []
+
+    @pytest.mark.unit
+    def test_merged_format_no_staxids(self, mock_blast6_no_staxids: Path) -> None:
+        """Merged format with 12-column input must default taxid to '0'."""
+        mod = self._import_parse_diamond()
+        hits = mod.parse_blast6(mock_blast6_no_staxids)
+        best = mod.extract_best_hits(hits)
+        filtered = mod.filter_by_bitscore(best, min_bitscore=50)
+        rows = mod.to_merged_detection_tsv(filtered)
+
+        for row in rows:
+            assert row["taxid"] == "0"
+
+    @pytest.mark.unit
+    def test_cli_merged_format_flag(
+        self, tmp_dir: Path, mock_blast6_tsv: Path
+    ) -> None:
+        """CLI --merged-format must produce TSV with merged detection columns."""
+        output_tsv = tmp_dir / "merged_detection.tsv"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(PARSE_DIAMOND_SCRIPT),
+                str(mock_blast6_tsv),
+                "--output",
+                str(output_tsv),
+                "--merged-format",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, (
+            f"parse_diamond.py --merged-format failed: {result.stderr}"
+        )
+        assert output_tsv.exists()
+
+        with open(output_tsv) as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            rows = list(reader)
+
+        assert len(rows) == 2
+        assert list(rows[0].keys()) == MERGED_EXPECTED_COLUMNS
+
+    @pytest.mark.unit
+    def test_cli_merged_format_values(
+        self, tmp_dir: Path, mock_blast6_tsv: Path
+    ) -> None:
+        """CLI --merged-format output must have correct values."""
+        output_tsv = tmp_dir / "merged_values.tsv"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(PARSE_DIAMOND_SCRIPT),
+                str(mock_blast6_tsv),
+                "--output",
+                str(output_tsv),
+                "--merged-format",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0
+
+        with open(output_tsv) as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            by_id = {row["seq_id"]: row for row in reader}
+
+        # Check contig_1
+        assert by_id["contig_1"]["detection_method"] == "diamond"
+        assert abs(float(by_id["contig_1"]["detection_score"]) - 0.8) < 1e-4
+        assert by_id["contig_1"]["taxonomy"] == ""
+        assert by_id["contig_1"]["taxid"] == "12345"
+        assert by_id["contig_1"]["subject_id"] == "UniRef90_P12345"
+
+    @pytest.mark.unit
+    def test_cli_merged_format_empty_input(
+        self, tmp_dir: Path, mock_blast6_empty: Path
+    ) -> None:
+        """CLI --merged-format must handle empty input (header-only output)."""
+        output_tsv = tmp_dir / "merged_empty.tsv"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(PARSE_DIAMOND_SCRIPT),
+                str(mock_blast6_empty),
+                "--output",
+                str(output_tsv),
+                "--merged-format",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0
+        assert output_tsv.exists()
+
+        with open(output_tsv) as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            rows = list(reader)
+
+        assert len(rows) == 0
+
+    @pytest.mark.unit
+    def test_cli_merged_format_numeric_columns(
+        self, tmp_dir: Path, mock_blast6_tsv: Path
+    ) -> None:
+        """Numeric columns in --merged-format output must be parseable."""
+        output_tsv = tmp_dir / "merged_numeric.tsv"
+
+        subprocess.run(
+            [
+                sys.executable,
+                str(PARSE_DIAMOND_SCRIPT),
+                str(mock_blast6_tsv),
+                "--output",
+                str(output_tsv),
+                "--merged-format",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        with open(output_tsv) as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            for row in reader:
+                # length must be numeric
+                if row["length"]:
+                    int(row["length"])
+                # detection_score must be numeric and in [0, 1]
+                score = float(row["detection_score"])
+                assert 0.0 <= score <= 1.0
+
+    @pytest.mark.unit
+    def test_cli_default_format_unchanged(
+        self, tmp_dir: Path, mock_blast6_tsv: Path
+    ) -> None:
+        """Default output (without --merged-format) must be unchanged."""
+        output_tsv = tmp_dir / "default_format.tsv"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(PARSE_DIAMOND_SCRIPT),
+                str(mock_blast6_tsv),
+                "--output",
+                str(output_tsv),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0
+
+        with open(output_tsv) as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            rows = list(reader)
+
+        # Default format must have original columns
+        assert list(rows[0].keys()) == EXPECTED_COLUMNS
+
+
+# ---------------------------------------------------------------------------
+# Test: detection.nf PARSE_DIAMOND_ONLY process (skip_ml=true pathway)
+# @TASK A3 - skip_ml Diamond schema 변환 Nextflow 구조 테스트
+# ---------------------------------------------------------------------------
+class TestDetectionNfParseDiamondOnly:
+    """Tests for PARSE_DIAMOND_ONLY process in detection.nf subworkflow."""
+
+    @pytest.mark.unit
+    def test_detection_nf_exists(self) -> None:
+        """detection.nf subworkflow file must exist."""
+        assert DETECTION_NF.exists(), (
+            f"detection.nf not found at {DETECTION_NF}"
+        )
+
+    @pytest.mark.unit
+    def test_detection_nf_contains_parse_diamond_only(self) -> None:
+        """detection.nf must define PARSE_DIAMOND_ONLY process."""
+        content = DETECTION_NF.read_text()
+        assert "process PARSE_DIAMOND_ONLY" in content
+
+    @pytest.mark.unit
+    def test_detection_nf_parse_diamond_only_uses_merged_format(self) -> None:
+        """PARSE_DIAMOND_ONLY must call parse_diamond.py with --merged-format."""
+        content = DETECTION_NF.read_text()
+        assert "--merged-format" in content
+
+    @pytest.mark.unit
+    def test_detection_nf_parse_diamond_only_emits_detection(self) -> None:
+        """PARSE_DIAMOND_ONLY must emit detection output."""
+        content = DETECTION_NF.read_text()
+        assert "emit: detection" in content
+
+    @pytest.mark.unit
+    def test_detection_nf_skip_ml_uses_parse_diamond_only(self) -> None:
+        """skip_ml=true branch must use PARSE_DIAMOND_ONLY instead of raw hits."""
+        content = DETECTION_NF.read_text()
+        assert "PARSE_DIAMOND_ONLY" in content
+        assert "PARSE_DIAMOND_ONLY.out.detection" in content
+
+    @pytest.mark.unit
+    def test_detection_nf_parse_diamond_only_has_stub(self) -> None:
+        """PARSE_DIAMOND_ONLY must have a stub block for dry-run testing."""
+        content = DETECTION_NF.read_text()
+        # Find the PARSE_DIAMOND_ONLY process block and check for stub
+        idx = content.find("process PARSE_DIAMOND_ONLY")
+        assert idx >= 0
+        process_block = content[idx:]
+        # The process ends at the next 'workflow' or 'process' keyword
+        next_boundary = process_block.find("\nworkflow ")
+        if next_boundary > 0:
+            process_block = process_block[:next_boundary]
+        assert "stub:" in process_block
+
+    @pytest.mark.unit
+    def test_detection_nf_parse_diamond_only_output_filename(self) -> None:
+        """PARSE_DIAMOND_ONLY output must match *_merged_detection.tsv pattern."""
+        content = DETECTION_NF.read_text()
+        idx = content.find("process PARSE_DIAMOND_ONLY")
+        assert idx >= 0
+        process_block = content[idx:]
+        next_boundary = process_block.find("\nworkflow ")
+        if next_boundary > 0:
+            process_block = process_block[:next_boundary]
+        assert "_merged_detection.tsv" in process_block

@@ -1,10 +1,9 @@
-// @TASK T4.2 - Merge all results into bigtable
-// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
-// @SPEC docs/planning/04-database-design.md#4.1-bigtable
+// Merge all results into bigtable
 
 process MERGE_RESULTS {
     tag "merge_results"
     label 'process_merge'
+    publishDir "${params.outdir}/taxonomy", mode: 'copy'
 
     input:
     path(taxonomies)

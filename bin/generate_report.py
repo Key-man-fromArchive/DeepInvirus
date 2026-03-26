@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
-# @TASK T5.2 - Automated Word report generation (improved per-sample analysis)
-# @SPEC docs/planning/05-design-system.md#5-word-보고서-템플릿
+# @TASK B1-B9 - Universal virome report framework (human-researcher-grade)
+# @SPEC docs/planning/10-workplan-v2-report-framework.md#Phase-B
 # @TEST tests/modules/test_report.py
 """Generate a Word (.docx) analysis report for DeepInvirus.
 
 Reads pipeline output files (bigtable, sample-taxon matrix, diversity
 tables, QC/assembly stats, per-sample coverage) and produces a formatted
-Word document with data-driven conclusions and per-sample comparisons.
+Word document with data-driven, scientifically hedged conclusions.
 
-Report structure:
-    1. 분석 개요
-    2. 품질 관리 (QC) 결과
-    3. 바이러스 탐지 결과
-    4. 분류학적 분석
-    5. 다양성 분석
-    6. 결론 및 해석
-    부록
+Report structure (B1 redesign):
+    0. Executive Summary
+    1. Methods (auto-generated, no hardcoding)
+    2. QC Results (waterfall table)
+    3. Host Removal Statistics
+    4. Virus Detection (stacked barplot, NOT pie chart)
+    5. Per-sample Coverage Analysis
+    6. Taxonomic Analysis (universal family descriptions)
+    7. Diversity Analysis (conditional on n_samples)
+    8. Conclusions (hedged, multi-hypothesis)
+    9. Limitations (auto-generated)
+    Appendix
 
 Usage::
 
@@ -70,6 +74,173 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# @TASK B4 - VIRUS_ORIGIN evidence-tier system
+# @SPEC docs/planning/10-workplan-v2-report-framework.md#B4
+# ---------------------------------------------------------------------------
+
+VIRUS_ORIGIN: dict[str, dict] = {
+    # --- Insect-infecting (high confidence) ---
+    "Iflaviridae":      {"origin": "insect", "confidence": "high",
+                         "note": "Iflavirus - insect picorna-like virus"},
+    "Dicistroviridae":  {"origin": "insect", "confidence": "high"},
+    "Baculoviridae":    {"origin": "insect", "confidence": "high"},
+    "Sinhaliviridae":   {"origin": "insect", "confidence": "high"},
+    "Nudiviridae":      {"origin": "insect", "confidence": "high"},
+    "Iridoviridae":     {"origin": "insect", "confidence": "medium",
+                         "note": "Some aquatic invertebrate hosts as well"},
+    "Parvoviridae":     {"origin": "insect", "confidence": "medium",
+                         "note": "Densovirinae only; Parvovirinae are vertebrate viruses"},
+    # --- Multi-host (low confidence at family level) ---
+    "Nodaviridae":      {"origin": "multi-host", "confidence": "low",
+                         "note": "Alphanodavirus=insect, Betanodavirus=fish. Genus-level confirmation needed"},
+    "Sedoreoviridae":   {"origin": "multi-host", "confidence": "low",
+                         "note": "Cypovirus=insect, Orbivirus=vertebrate"},
+    # --- Microbiome phage ---
+    "Microviridae":     {"origin": "microbiome_phage", "confidence": "high"},
+    "Fiersviridae":     {"origin": "microbiome_phage", "confidence": "medium"},
+    # --- Fungal ---
+    "Narnaviridae":     {"origin": "fungal", "confidence": "medium"},
+    "Mitoviridae":      {"origin": "fungal", "confidence": "medium"},
+    "Endornaviridae":   {"origin": "fungal", "confidence": "medium"},
+    "Partitiviridae":   {"origin": "fungal_or_plant", "confidence": "low"},
+    "Totiviridae":      {"origin": "fungal", "confidence": "medium"},
+    # --- Plant ---
+    "Bromoviridae":     {"origin": "plant", "confidence": "medium"},
+    "Virgaviridae":     {"origin": "plant", "confidence": "medium"},
+    # --- Cautious ---
+    "Flaviviridae":     {"origin": "cautious", "confidence": "low",
+                         "note": "ISF are insect-specific, but pathogenic flaviviruses also included"},
+    "Genomoviridae":    {"origin": "cautious", "confidence": "low",
+                         "note": "CRESS-DNA. Possibly environmental origin"},
+    "Adintoviridae":    {"origin": "cautious", "confidence": "low",
+                         "note": "Possible EVE. May be host-genome derived"},
+}
+
+# Class-level fallback (when family is unclassified)
+VIRUS_ORIGIN_CLASS_FALLBACK: dict[str, dict] = {
+    "Caudoviricetes": {"origin": "microbiome_phage", "confidence": "low",
+                       "note": "Class-level only. Sub-family not classified"},
+}
+
+
+# ---------------------------------------------------------------------------
+# @TASK B9 - Universal FAMILY_DESCRIPTIONS (no insect-specific language)
+# @SPEC docs/planning/10-workplan-v2-report-framework.md#B9
+# ---------------------------------------------------------------------------
+
+FAMILY_DESCRIPTIONS: dict[str, str] = {
+    "Parvoviridae": (
+        "Single-stranded DNA viruses (ssDNA). This family includes the subfamily "
+        "Densovirinae (densoviruses), which are known pathogens of invertebrates, "
+        "as well as Parvovirinae that infect vertebrates. Densoviruses replicate "
+        "in host cell nuclei and can cause host mortality."
+    ),
+    "Iflaviridae": (
+        "Positive-sense single-stranded RNA viruses (+ssRNA) in the order "
+        "Picornavirales. Members are known to infect arthropods, primarily insects, "
+        "and can cause both acute and persistent infections."
+    ),
+    "Dicistroviridae": (
+        "Positive-sense single-stranded RNA viruses (+ssRNA). Members include "
+        "well-characterized insect viruses such as Cricket paralysis virus (CrPV) "
+        "and Israeli acute paralysis virus (IAPV). They employ an internal ribosome "
+        "entry site (IRES) for translation."
+    ),
+    "Sinhaliviridae": (
+        "Positive-sense single-stranded RNA viruses in the order Nodamuvirales. "
+        "A relatively recently classified family, primarily associated with "
+        "invertebrate hosts."
+    ),
+    "Baculoviridae": (
+        "Double-stranded DNA viruses (dsDNA). Major pathogens of Lepidoptera and "
+        "other insect orders; they cause nuclear polyhedrosis disease. Widely used "
+        "as biological pest control agents and as protein expression vectors."
+    ),
+    "Caudoviricetes": (
+        "A class comprising tailed bacteriophages. These are among the most abundant "
+        "biological entities in environmental samples and infect a wide range of "
+        "bacteria. Their detection in metagenomic samples typically reflects the "
+        "associated microbial community."
+    ),
+    "Flaviviridae": (
+        "Positive-sense single-stranded RNA viruses. The family includes both "
+        "arthropod-borne pathogenic viruses (e.g. Dengue, Zika) and insect-specific "
+        "flaviviruses (ISFs) with no known vertebrate host. Classification to "
+        "genus/species level is needed to assess pathogenic potential."
+    ),
+    "Bromoviridae": (
+        "Positive-sense single-stranded RNA viruses. Primarily plant pathogens. "
+        "Detection in non-plant samples may reflect dietary or environmental "
+        "plant-derived RNA."
+    ),
+    "Narnaviridae": (
+        "Positive-sense single-stranded RNA viruses that infect fungi. "
+        "Narnaviruses are capsid-less and replicate within fungal cells. "
+        "Their presence may reflect the associated fungal community."
+    ),
+    "Mitoviridae": (
+        "Positive-sense single-stranded RNA viruses that replicate within fungal "
+        "mitochondria. Detection may indicate the presence of infected fungi "
+        "in the sample."
+    ),
+    "Endornaviridae": (
+        "Double-stranded RNA viruses (dsRNA) that infect plants and fungi. "
+        "Typically persistent and non-pathogenic to their hosts."
+    ),
+    "Virgaviridae": (
+        "Positive-sense single-stranded RNA viruses. Major plant pathogens "
+        "including Tobacco mosaic virus (TMV). Detection in non-plant samples "
+        "may reflect environmental contamination or dietary exposure."
+    ),
+    "Fiersviridae": (
+        "Positive-sense single-stranded RNA viruses. RNA phages that infect "
+        "bacteria. Their detection reflects the associated bacterial community."
+    ),
+    "Adintoviridae": (
+        "Double-stranded DNA viruses derived from Polinton-like elements. "
+        "A relatively newly classified family; members may also be found "
+        "integrated into eukaryotic host genomes (endogenous viral elements)."
+    ),
+    "Nudiviridae": (
+        "Double-stranded DNA viruses (dsDNA) related to Baculoviridae. "
+        "They infect a broad range of arthropods and do not form occlusion bodies."
+    ),
+    "Iridoviridae": (
+        "Double-stranded DNA viruses (dsDNA). Members infect a wide range of "
+        "invertebrates and ectothermic vertebrates, including insects and fish."
+    ),
+    "Microviridae": (
+        "Single-stranded DNA viruses (ssDNA) that infect bacteria (phages). "
+        "Among the smallest known DNA phages, they are ubiquitous in microbial "
+        "communities."
+    ),
+    "Nodaviridae": (
+        "Positive-sense single-stranded RNA viruses. The family contains two "
+        "genera: Alphanodavirus (insect hosts) and Betanodavirus (fish hosts). "
+        "Genus-level classification is essential for host attribution."
+    ),
+    "Sedoreoviridae": (
+        "Double-stranded RNA viruses (dsRNA). A diverse family that includes "
+        "Cypovirus (insect pathogens) and Orbivirus (arthropod-borne vertebrate "
+        "pathogens). Host range is highly genus-dependent."
+    ),
+    "Totiviridae": (
+        "Double-stranded RNA viruses (dsRNA) primarily infecting fungi and "
+        "protozoa. They are typically non-pathogenic, persistent infections."
+    ),
+    "Partitiviridae": (
+        "Double-stranded RNA viruses (dsRNA) with a broad host range including "
+        "fungi and plants. They maintain persistent, typically asymptomatic infections."
+    ),
+    "Genomoviridae": (
+        "Circular single-stranded DNA viruses (CRESS-DNA). Frequently recovered "
+        "from environmental and metagenomic datasets. Host range is poorly "
+        "characterized."
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
 # Data loading: per-sample coverage
 # ---------------------------------------------------------------------------
 
@@ -85,12 +256,10 @@ def _load_coverage_files(coverage_dir: Path) -> dict[str, pd.DataFrame]:
         return result
 
     for f in sorted(coverage_dir.glob("*_coverage.tsv")):
-        # Extract sample name: e.g. GC_Tm_coverage.tsv -> GC_Tm
         sample_name = f.stem.replace("_coverage", "")
         try:
             df = pd.read_csv(f, sep="\t")
             cols = df.columns.tolist()
-            # Rename verbose CoverM columns to simple names
             rename_map = {cols[0]: "Contig"}
             if len(cols) > 1:
                 rename_map[cols[1]] = "mean_coverage"
@@ -138,7 +307,6 @@ def _load_bbduk_stats(qc_dir: Path) -> list[dict]:
         sample_name = f.stem.replace(".bbduk_stats", "")
         try:
             text = f.read_text()
-            # Parse first section (adapter removal)
             lines = text.strip().split("\n")
             total_reads = 0
             matched_reads = 0
@@ -177,39 +345,122 @@ def _load_bbduk_stats(qc_dir: Path) -> list[dict]:
 
 def _build_per_sample_coverage_table(
     bigtable: pd.DataFrame,
-    coverage_data: dict[str, pd.DataFrame],
+    coverage_data: dict[str, pd.DataFrame] | None = None,
 ) -> pd.DataFrame:
-    """Build a table comparing viral contig coverage across samples.
+    """Build a contig x sample coverage pivot table.
+
+    The bigtable contains per-sample rows (each contig duplicated once per
+    sample).  This function pivots so that each contig appears exactly once
+    with one coverage column per sample (<sample>_cov).
+
+    When *coverage_data* (dict of external coverage TSVs) is provided,
+    it is used as the coverage source.  Otherwise the bigtable's own
+    ``coverage`` and ``sample`` columns are pivoted directly.
 
     Returns DataFrame with columns:
-        contig, family, length, <sample1>_coverage, <sample2>_coverage, ...
+        contig, family, length, <sample1>_cov, <sample2>_cov, ...
     """
-    if not coverage_data or bigtable.empty:
+    if bigtable.empty:
         return pd.DataFrame()
 
-    viral_contigs = bigtable["seq_id"].tolist()
-    result = bigtable[["seq_id", "family", "length"]].copy()
-    result = result.rename(columns={"seq_id": "contig"})
+    # ------------------------------------------------------------------
+    # 1. Unique contig info (deduplicated)
+    # ------------------------------------------------------------------
+    unique_bt = (
+        bigtable
+        .drop_duplicates(subset=["seq_id"])[["seq_id", "family", "length"]]
+        .copy()
+    )
+    unique_bt = unique_bt.rename(columns={"seq_id": "contig"})
 
-    for sample_name, cov_df in sorted(coverage_data.items()):
-        cov_subset = cov_df[cov_df["Contig"].isin(viral_contigs)][["Contig", "mean_coverage"]].copy()
-        cov_subset = cov_subset.rename(columns={
-            "Contig": "contig",
-            "mean_coverage": f"{sample_name}_cov",
-        })
-        result = result.merge(cov_subset, on="contig", how="left")
+    # ------------------------------------------------------------------
+    # 2a. External coverage files (original path)
+    # ------------------------------------------------------------------
+    if coverage_data:
+        viral_contigs = unique_bt["contig"].tolist()
+        result = unique_bt.copy()
 
-    # Fill NaN with 0
+        for sample_name, cov_df in sorted(coverage_data.items()):
+            cov_subset = (
+                cov_df[cov_df["Contig"].isin(viral_contigs)][["Contig", "mean_coverage"]]
+                .copy()
+            )
+            cov_subset = cov_subset.rename(columns={
+                "Contig": "contig",
+                "mean_coverage": f"{sample_name}_cov",
+            })
+            result = result.merge(cov_subset, on="contig", how="left")
+
+    # ------------------------------------------------------------------
+    # 2b. Pivot from bigtable's own coverage + sample columns
+    # ------------------------------------------------------------------
+    elif "coverage" in bigtable.columns and "sample" in bigtable.columns:
+        cov_pivot = (
+            bigtable.pivot_table(
+                index="seq_id",
+                columns="sample",
+                values="coverage",
+                aggfunc="first",
+            )
+            .reset_index()
+            .rename(columns={"seq_id": "contig"})
+        )
+
+        # Rename sample columns to *_cov
+        rename_map = {
+            col: f"{col}_cov"
+            for col in cov_pivot.columns
+            if col != "contig"
+        }
+        cov_pivot = cov_pivot.rename(columns=rename_map)
+
+        result = unique_bt.merge(cov_pivot, on="contig", how="left")
+    else:
+        # No coverage information at all
+        return pd.DataFrame()
+
+    # ------------------------------------------------------------------
+    # 3. Fill NaN and sort by max coverage descending
+    # ------------------------------------------------------------------
     cov_cols = [c for c in result.columns if c.endswith("_cov")]
     result[cov_cols] = result[cov_cols].fillna(0)
 
-    # Sort by max coverage descending
     if cov_cols:
         result["max_cov"] = result[cov_cols].max(axis=1)
         result = result.sort_values("max_cov", ascending=False)
         result = result.drop(columns=["max_cov"])
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# @TASK B5 - Top virus auto-detection (breadth-weighted)
+# @SPEC docs/planning/10-workplan-v2-report-framework.md#B5
+# ---------------------------------------------------------------------------
+
+
+def detect_top_virus(bigtable: pd.DataFrame) -> pd.Series | None:
+    """Detect the top virus by coverage * log10(length) score.
+
+    Returns the top row as a Series, or None if no classified virus found.
+    """
+    if bigtable.empty or "family" not in bigtable.columns:
+        return None
+    if "coverage" not in bigtable.columns:
+        return None
+
+    bt = bigtable[bigtable["family"] != "Unclassified"].copy()
+    if bt.empty:
+        return None
+
+    bt["coverage"] = pd.to_numeric(bt["coverage"], errors="coerce").fillna(0)
+    bt["length"] = pd.to_numeric(bt["length"], errors="coerce").fillna(0)
+    bt["_score"] = bt["coverage"] * np.log10(bt["length"].clip(lower=1))
+    if bt["_score"].max() <= 0:
+        return None
+
+    top = bt.nlargest(1, "_score").iloc[0]
+    return top
 
 
 # ---------------------------------------------------------------------------
@@ -234,29 +485,44 @@ def _plot_host_mapping_comparison(host_stats: pd.DataFrame, output_path: Path) -
     host_pct = host_stats["host_removal_rate"].values.astype(float)
     nonhost_pct = 100.0 - host_pct
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    x = np.arange(len(samples))
+    n_samples = len(samples)
+    fig_width = max(8, n_samples * 1.5)
+    fig, ax = plt.subplots(figsize=(fig_width, 5))
+    x = np.arange(n_samples)
     width = 0.5
 
-    bars_host = ax.bar(x, host_pct, width, label="Host RNA (%)", color="#BDBDBD")
-    bars_nonhost = ax.bar(x, nonhost_pct, width, bottom=host_pct,
-                          label="Non-host (viral + other) (%)", color="#1F77B4")
+    ax.bar(x, host_pct, width, label="Host RNA (%)", color="#BDBDBD")
+    ax.bar(x, nonhost_pct, width, bottom=host_pct,
+           label="Non-host (viral + other) (%)", color="#1F77B4")
 
-    # Annotate percentages
+    # Dynamic annotation fontsize; skip annotation on narrow bars
+    annot_fontsize = max(7, min(11, 120 // max(n_samples, 1)))
     for i, (h, nh) in enumerate(zip(host_pct, nonhost_pct)):
-        ax.text(i, h / 2, f"{h:.1f}%", ha="center", va="center",
-                fontweight="bold", fontsize=11, color="white" if h > 20 else "black")
-        ax.text(i, h + nh / 2, f"{nh:.1f}%", ha="center", va="center",
-                fontweight="bold", fontsize=11, color="white" if nh > 20 else "black")
+        if h > 8:  # only annotate if bar segment is wide enough to read
+            ax.text(i, h / 2, f"{h:.1f}%", ha="center", va="center",
+                    fontweight="bold", fontsize=annot_fontsize,
+                    color="white" if h > 20 else "black")
+        if nh > 8:
+            ax.text(i, h + nh / 2, f"{nh:.1f}%", ha="center", va="center",
+                    fontweight="bold", fontsize=annot_fontsize,
+                    color="white" if nh > 20 else "black")
 
     ax.set_xlabel("Sample", fontsize=12)
     ax.set_ylabel("Proportion (%)", fontsize=12)
     ax.set_title("Host Mapping Rate Comparison", fontsize=14, fontweight="bold")
     ax.set_xticks(x)
-    ax.set_xticklabels(samples, fontsize=11)
+    # Truncate long sample names and rotate if many samples
+    sample_labels = [s[:20] + "..." if len(s) > 20 else s for s in samples]
+    tick_fontsize = max(7, min(11, 150 // max(n_samples, 1)))
+    if n_samples > 5:
+        ax.set_xticklabels(sample_labels, fontsize=tick_fontsize,
+                           rotation=45, ha="right")
+    else:
+        ax.set_xticklabels(sample_labels, fontsize=tick_fontsize)
     ax.set_ylim(0, 105)
     ax.legend(loc="upper right", fontsize=10)
 
+    plt.tight_layout()
     fig.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
     plt.close(fig)
     logger.info("Host mapping comparison chart saved to %s", output_path)
@@ -289,45 +555,53 @@ def _plot_per_sample_coverage_heatmap(
         plt.close(fig)
         return output_path
 
-    # Take top N contigs
     plot_df = cov_table.head(top_n).copy()
 
-    # Create label: family (contig)
     labels = []
     for _, row in plot_df.iterrows():
         family = row.get("family", "Unknown")
         contig = row.get("contig", "")
-        labels.append(f"{family} ({contig})")
+        raw_label = f"{family} ({contig})"
+        # Truncate long labels to prevent y-axis overlap
+        labels.append(raw_label[:30] + "..." if len(raw_label) > 30 else raw_label)
 
-    # Prepare matrix for heatmap
     matrix = plot_df[cov_cols].values
-    # log10 transform for better visualization
     matrix_log = np.log10(matrix + 1)
 
-    # Clean column names for display
     sample_names = [c.replace("_cov", "") for c in cov_cols]
+    # Truncate long sample names
+    sample_labels = [s[:20] + "..." if len(s) > 20 else s for s in sample_names]
 
-    fig, ax = plt.subplots(figsize=(max(8, len(cov_cols) * 3), max(8, len(labels) * 0.35)))
+    n_items = len(labels)
+    n_cols = len(cov_cols)
+    fig_height = max(8, n_items * 0.4)
+    fig_width = max(8, n_cols * 3)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     im = ax.imshow(matrix_log, aspect="auto", cmap="YlOrRd")
 
-    ax.set_xticks(range(len(sample_names)))
-    ax.set_xticklabels(sample_names, fontsize=11, fontweight="bold")
-    ax.set_yticks(range(len(labels)))
-    ax.set_yticklabels(labels, fontsize=9)
+    ax.set_xticks(range(n_cols))
+    ax.set_xticklabels(sample_labels, fontsize=min(11, max(7, 120 // max(n_cols, 1))),
+                       fontweight="bold")
+    ax.set_yticks(range(n_items))
+    # Scale y-tick fontsize inversely with item count
+    ytick_fontsize = max(6, min(9, 300 // max(n_items, 1)))
+    ax.set_yticklabels(labels, fontsize=ytick_fontsize)
 
-    # Add text annotations with actual values
-    for i in range(len(labels)):
-        for j in range(len(sample_names)):
-            val = matrix[i, j]
-            text_color = "white" if matrix_log[i, j] > matrix_log.max() * 0.6 else "black"
-            if val >= 1000:
-                text = f"{val:.0f}"
-            elif val >= 1:
-                text = f"{val:.1f}"
-            else:
-                text = f"{val:.2f}" if val > 0 else "0"
-            ax.text(j, i, text, ha="center", va="center",
-                    fontsize=7, color=text_color)
+    # Only add cell annotations if the number of items is manageable
+    annot_fontsize = max(5, min(7, 200 // max(n_items, 1)))
+    if n_items <= 40:
+        for i in range(n_items):
+            for j in range(n_cols):
+                val = matrix[i, j]
+                text_color = "white" if matrix_log[i, j] > matrix_log.max() * 0.6 else "black"
+                if val >= 1000:
+                    text = f"{val:.0f}"
+                elif val >= 1:
+                    text = f"{val:.1f}"
+                else:
+                    text = f"{val:.2f}" if val > 0 else "0"
+                ax.text(j, i, text, ha="center", va="center",
+                        fontsize=annot_fontsize, color=text_color)
 
     cbar = fig.colorbar(im, ax=ax, shrink=0.8)
     cbar.set_label("log10(mean coverage + 1)", fontsize=10)
@@ -335,6 +609,7 @@ def _plot_per_sample_coverage_heatmap(
     ax.set_title("Per-sample Viral Contig Coverage", fontsize=14, fontweight="bold")
     ax.set_xlabel("Sample", fontsize=12)
 
+    plt.tight_layout()
     fig.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
     plt.close(fig)
     logger.info("Per-sample coverage heatmap saved to %s", output_path)
@@ -354,23 +629,29 @@ def _plot_detection_barchart(bigtable_df: pd.DataFrame, output_path: Path) -> Pa
         plt.close(fig)
         return output_path
 
-    counts = bigtable_df["detection_method"].value_counts()
-    fig, ax = plt.subplots(figsize=(8, 6))
+    counts = bigtable_df.drop_duplicates(subset=["seq_id"])["detection_method"].value_counts()
+    fig, ax = plt.subplots(figsize=(max(8, len(counts) * 1.5), 6))
     colours = [DEEPINVIRUS_PALETTE[i % len(DEEPINVIRUS_PALETTE)] for i in range(len(counts))]
     counts.plot.bar(ax=ax, color=colours)
     ax.set_xlabel("Detection Method")
     ax.set_ylabel("Sequence Count")
     ax.set_title("Virus Detection by Method")
-    ax.tick_params(axis="x", rotation=45)
+    # Rotate x-tick labels with proper alignment to prevent overlap
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
 
+    plt.tight_layout()
     fig.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
     plt.close(fig)
     logger.info("Detection bar chart saved to %s", output_path)
     return output_path
 
 
+# @TASK B1 - Replaced pie chart with stacked barplot (C2)
 def _plot_family_composition(bigtable: pd.DataFrame, output_path: Path) -> Path:
-    """Generate a pie chart of virus family distribution."""
+    """Generate a horizontal stacked barplot of virus family distribution.
+
+    Replaces the previous pie chart per academic publication standards.
+    """
     setup_matplotlib()
     output_path = Path(output_path)
 
@@ -382,27 +663,37 @@ def _plot_family_composition(bigtable: pd.DataFrame, output_path: Path) -> Path:
         plt.close(fig)
         return output_path
 
-    family_counts = bigtable["family"].value_counts()
+    family_counts = bigtable.drop_duplicates(subset=["seq_id"])["family"].value_counts()
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    n_families = len(family_counts)
+    fig_height = max(4, n_families * 0.5)
+    fig, ax = plt.subplots(figsize=(10, fig_height))
     colors = [DEEPINVIRUS_PALETTE[i % len(DEEPINVIRUS_PALETTE)]
-              for i in range(len(family_counts))]
+              for i in range(n_families)]
 
-    wedges, texts, autotexts = ax.pie(
-        family_counts.values,
-        labels=family_counts.index,
-        autopct=lambda pct: f"{pct:.1f}%\n({int(round(pct/100.*family_counts.sum()))})",
-        colors=colors,
-        pctdistance=0.85,
-        startangle=90,
-    )
-    for t in texts:
-        t.set_fontsize(9)
-    for t in autotexts:
-        t.set_fontsize(8)
+    y_pos = np.arange(n_families)
+    ax.barh(y_pos, family_counts.values, color=colors, edgecolor="white", linewidth=0.5)
+    ax.set_yticks(y_pos)
+    # Truncate long family names and scale fontsize
+    family_labels = [str(f)[:25] + "..." if len(str(f)) > 25 else str(f)
+                     for f in family_counts.index]
+    ytick_fontsize = max(7, min(10, 200 // max(n_families, 1)))
+    ax.set_yticklabels(family_labels, fontsize=ytick_fontsize)
+    ax.invert_yaxis()
 
-    ax.set_title("Virus Family Composition (by contig count)", fontsize=14, fontweight="bold")
+    # Annotate counts with scaled fontsize
+    annot_fontsize = max(6, min(8, 150 // max(n_families, 1)))
+    for i, (count, total) in enumerate(
+        zip(family_counts.values, [family_counts.sum()] * n_families)
+    ):
+        pct = count / total * 100
+        ax.text(count + 0.3, i, f"{count} ({pct:.1f}%)", va="center",
+                fontsize=annot_fontsize)
 
+    ax.set_xlabel("Contig Count", fontsize=12)
+    ax.set_title("Virus Family Composition", fontsize=14, fontweight="bold")
+
+    plt.tight_layout()
     fig.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
     plt.close(fig)
     logger.info("Family composition chart saved to %s", output_path)
@@ -424,28 +715,43 @@ def _plot_qc_barchart(bbduk_stats: list[dict], output_path: Path) -> Path:
 
     df = pd.DataFrame(bbduk_stats)
     samples = df["sample"].tolist()
-    x = np.arange(len(samples))
+    n_samples = len(samples)
+    x = np.arange(n_samples)
     width = 0.35
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.bar(x - width/2, df["total_reads"].values / 1e6, width,
+    fig_width = max(8, n_samples * 2)
+    fig, ax = plt.subplots(figsize=(fig_width, 6))
+    total_vals = df["total_reads"].values / 1e6
+    clean_vals = df["clean_reads"].values / 1e6
+    ax.bar(x - width/2, total_vals, width,
            label="Total reads (M)", color=DEEPINVIRUS_PALETTE[0])
-    ax.bar(x + width/2, df["clean_reads"].values / 1e6, width,
+    ax.bar(x + width/2, clean_vals, width,
            label="After adapter removal (M)", color=DEEPINVIRUS_PALETTE[2])
 
     ax.set_xlabel("Sample", fontsize=12)
     ax.set_ylabel("Read Count (millions)", fontsize=12)
     ax.set_title("BBDuk Adapter Removal", fontsize=14, fontweight="bold")
     ax.set_xticks(x)
-    ax.set_xticklabels(samples, fontsize=11)
+    # Truncate long sample names and rotate if many samples
+    sample_labels = [s[:20] + "..." if len(s) > 20 else s for s in samples]
+    tick_fontsize = max(7, min(11, 150 // max(n_samples, 1)))
+    if n_samples > 5:
+        ax.set_xticklabels(sample_labels, fontsize=tick_fontsize,
+                           rotation=45, ha="right")
+    else:
+        ax.set_xticklabels(sample_labels, fontsize=tick_fontsize)
     ax.legend(fontsize=10)
 
-    # Add percentage labels
+    # Place annotation above bars with dynamic offset to avoid overlap
+    annot_fontsize = max(7, min(9, 120 // max(n_samples, 1)))
+    y_max = max(total_vals.max(), clean_vals.max()) if len(total_vals) > 0 else 1
+    offset = y_max * 0.03  # 3% of max height
     for i, row in df.iterrows():
         pct = row["adapter_pct"]
-        ax.text(i + width/2, row["clean_reads"] / 1e6 + 0.5,
-                f"-{pct:.1f}%", ha="center", fontsize=9, color="red")
+        ax.text(i + width/2, row["clean_reads"] / 1e6 + offset,
+                f"-{pct:.1f}%", ha="center", fontsize=annot_fontsize, color="red")
 
+    plt.tight_layout()
     fig.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
     plt.close(fig)
     logger.info("QC bar chart saved to %s", output_path)
@@ -476,6 +782,7 @@ def _plot_pcoa_from_coords(pcoa_df: pd.DataFrame, output_path: Path) -> Path:
     ax.set_title("PCoA Ordination")
     ax.set_aspect("equal", adjustable="datalim")
 
+    plt.tight_layout()
     fig.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
     plt.close(fig)
     logger.info("PCoA plot saved to %s", output_path)
@@ -483,73 +790,98 @@ def _plot_pcoa_from_coords(pcoa_df: pd.DataFrame, output_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Virus family descriptions (for scientific context)
+# @TASK B8 - QC waterfall table builder
+# @SPEC docs/planning/10-workplan-v2-report-framework.md#B8
 # ---------------------------------------------------------------------------
 
-FAMILY_DESCRIPTIONS = {
-    "Parvoviridae": (
-        "단일가닥 DNA 바이러스 (ssDNA). 곤충에서 발견되는 Densovirinae 아과를 포함하며, "
-        "밀도핵다각체병바이러스(densovirus)로 곤충의 주요 병원체로 알려져 있습니다. "
-        "곤충 세포의 핵에서 증식하며, 숙주 사멸을 유발할 수 있습니다."
-    ),
-    "Picornaviridae": (
-        "양성 단일가닥 RNA 바이러스 (+ssRNA). 곤충에서 다양한 피코르나유사바이러스(picorna-like virus)가 "
-        "보고되어 있으며, 장내 감염을 통해 전파됩니다. "
-        "Cricket paralysis virus, Drosophila C virus 등이 이 과에 속합니다."
-    ),
-    "Sinhaliviridae": (
-        "양성 단일가닥 RNA 바이러스. Nodamuvirales 목에 속하며, "
-        "주로 곤충 및 무척추동물에서 발견됩니다. 비교적 최근 분류된 바이러스과입니다."
-    ),
-    "Baculoviridae": (
-        "이중가닥 DNA 바이러스 (dsDNA). 곤충, 특히 나비목(Lepidoptera)의 주요 병원체로, "
-        "핵다각체병(nucleopolyhedrovirus)을 유발합니다. "
-        "생물학적 해충 방제에 널리 활용되는 바이러스입니다."
-    ),
-    "Caudoviricetes": (
-        "꼬리형 박테리오파지를 포함하는 분류군. 세균을 감염시키는 바이러스로, "
-        "환경 시료에서 가장 흔하게 발견되는 바이러스 그룹 중 하나입니다. "
-        "곤충 장내 미생물군집의 세균을 감염시키는 것으로 추정됩니다."
-    ),
-    "Flaviviridae": (
-        "양성 단일가닥 RNA 바이러스. 곤충 특이적 플라비바이러스(insect-specific flavivirus)가 "
-        "다수 보고되어 있으며, 모기 등 흡혈 곤충에서 주로 발견됩니다."
-    ),
-    "Bromoviridae": (
-        "양성 단일가닥 RNA 바이러스. 주로 식물 병원체이나, "
-        "곤충에서의 검출은 식물 유래 RNA의 섭취를 반영할 수 있습니다."
-    ),
-    "Narnaviridae": (
-        "양성 단일가닥 RNA 바이러스. 진균에 감염하는 나르나바이러스를 포함하며, "
-        "곤충 장내 진균군집과의 연관이 시사됩니다."
-    ),
-    "Mitoviridae": (
-        "양성 단일가닥 RNA 바이러스. 진균의 미토콘드리아에서 증식하는 바이러스로, "
-        "곤충 장내 진균에서 유래했을 가능성이 있습니다."
-    ),
-    "Endornaviridae": (
-        "이중가닥 RNA 바이러스 (dsRNA). 식물 및 진균에 감염하며, "
-        "곤충 시료에서의 검출은 먹이사슬을 통한 간접 검출을 시사합니다."
-    ),
-    "Virgaviridae": (
-        "양성 단일가닥 RNA 바이러스. 주요 식물 병원체로, "
-        "Tobacco mosaic virus (TMV) 등이 이 과에 속합니다. "
-        "곤충이 식물을 섭취하면서 검출되었을 가능성이 높습니다."
-    ),
-    "Fiersviridae": (
-        "양성 단일가닥 RNA 바이러스. 세균을 감염시키는 RNA 파지를 포함하며, "
-        "곤충 장내 세균군집과의 연관이 추정됩니다."
-    ),
-    "Adintoviridae": (
-        "이중가닥 DNA 바이러스. Polinton-like virus에서 유래한 비교적 새로운 분류군으로, "
-        "진핵생물 게놈에 통합된 형태로도 발견됩니다."
-    ),
-}
+
+def _build_qc_waterfall(
+    bbduk_stats: list[dict],
+    host_stats: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build a read-flow waterfall table.
+
+    Columns: Sample | Raw Reads | After Adapter (-X.X%) | After Host (-XX.X%) | Final
+    """
+    if not bbduk_stats:
+        return pd.DataFrame()
+
+    rows = []
+    for bstat in bbduk_stats:
+        sample = bstat["sample"]
+        raw = bstat["total_reads"]
+        after_adapter = bstat["clean_reads"]
+        adapter_loss_pct = bstat["adapter_pct"]
+
+        # Find host removal stats for this sample
+        after_host = after_adapter  # default if no host stats
+        host_loss_pct = 0.0
+        if not host_stats.empty and "sample" in host_stats.columns:
+            match = host_stats[host_stats["sample"] == sample]
+            if not match.empty:
+                hr = match.iloc[0]
+                if "unmapped_reads" in hr.index:
+                    after_host = int(hr["unmapped_reads"])
+                    if after_adapter > 0:
+                        host_loss_pct = (1 - after_host / after_adapter) * 100
+
+        rows.append({
+            "Sample": sample,
+            "Raw Reads": f"{raw:,}",
+            "After Adapter": f"{after_adapter:,} (-{adapter_loss_pct:.1f}%)",
+            "After Host Removal": f"{after_host:,} (-{host_loss_pct:.1f}%)",
+            "Final": f"{after_host:,}",
+        })
+
+    return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------------------------
-# Data-driven conclusion generator
+# @TASK B3 - Scientific interpretation engine (hedged, multi-hypothesis)
+# @SPEC docs/planning/10-workplan-v2-report-framework.md#B3
 # ---------------------------------------------------------------------------
+
+
+def _generate_executive_summary(
+    bigtable: pd.DataFrame,
+    n_samples: int,
+    sample_names: list[str],
+    top_virus: pd.Series | None,
+) -> list[str]:
+    """Generate a concise executive summary (section 0).
+
+    Returns a list of paragraph strings.
+    """
+    paragraphs = []
+    n_contigs = bigtable["seq_id"].nunique()
+    families = bigtable.drop_duplicates(subset=["seq_id"])["family"].value_counts() if "family" in bigtable.columns else pd.Series(dtype=int)
+    n_families = len(families[families.index != "Unclassified"])
+
+    # 3-line summary
+    paragraphs.append(
+        f"Co-assembly of {n_samples} sample(s) ({', '.join(sample_names) if sample_names else 'N/A'}) "
+        f"yielded {n_contigs} viral contigs assigned to {n_families} classified viral families."
+    )
+
+    if top_virus is not None:
+        tv_family = top_virus.get("family", "Unknown")
+        tv_length = int(top_virus.get("length", 0))
+        tv_cov = float(top_virus.get("coverage", 0))
+        paragraphs.append(
+            f"The highest-scoring viral contig belongs to {tv_family} "
+            f"(length: {tv_length:,} bp, coverage: {tv_cov:.1f}x). "
+            f"This contig represents the most prominent viral signal in the dataset."
+        )
+
+    if not families.empty:
+        top3 = families[families.index != "Unclassified"].head(3)
+        if not top3.empty:
+            top_text = ", ".join([f"{name} ({count} contigs)" for name, count in top3.items()])
+            paragraphs.append(
+                f"The dominant viral families by contig count are: {top_text}."
+            )
+
+    return paragraphs
 
 
 def _generate_conclusion(
@@ -558,91 +890,199 @@ def _generate_conclusion(
     coverage_data: dict[str, pd.DataFrame],
     alpha: pd.DataFrame,
     sample_names: list[str],
+    n_samples: int,
 ) -> list[str]:
-    """Generate data-driven conclusion paragraphs.
+    """Generate data-driven, scientifically hedged conclusion paragraphs (B3).
 
-    Returns a list of paragraph strings.
+    All assertions use hedged language. No single-cause attribution.
+    No "dead/alive sample" language without metadata.
+    No Parvoviridae hardcoded highlight.
     """
     paragraphs = []
 
-    n_contigs = len(bigtable)
-    n_samples = len(sample_names)
-    families = bigtable["family"].value_counts() if "family" in bigtable.columns else pd.Series()
+    n_contigs = bigtable["seq_id"].nunique()
+    families = bigtable.drop_duplicates(subset=["seq_id"])["family"].value_counts() if "family" in bigtable.columns else pd.Series(dtype=int)
     classified_families = families[families.index != "Unclassified"]
 
     # --- Overview ---
     paragraphs.append(
-        f"본 분석에서는 {n_samples}개 샘플 ({', '.join(sample_names)})의 "
-        f"co-assembly를 통해 총 {n_contigs}개의 바이러스 유래 contig이 탐지되었으며, "
-        f"{len(classified_families)}개의 바이러스 분류군(family 이상)이 확인되었습니다."
+        f"A total of {n_contigs} viral contigs were detected via co-assembly "
+        f"of {n_samples} sample(s), encompassing {len(classified_families)} "
+        f"classified viral families. These results provide an initial "
+        f"characterization of the viral community associated with the samples."
     )
 
-    # --- Host mapping comparison ---
+    # --- Host mapping interpretation (hedged, B3) ---
     if not host_stats.empty and len(host_stats) >= 2:
-        for _, row in host_stats.iterrows():
-            sample = row.get("sample", "")
-            rate = row.get("host_removal_rate", 0)
-            total = row.get("total_reads", 0)
-            unmapped = row.get("unmapped_reads", 0)
-            paragraphs.append(
-                f"{sample}: 전체 {total:,}개 read 중 host RNA 매핑률 {rate:.1f}%, "
-                f"non-host read {unmapped:,}개 ({100-rate:.1f}%)"
-            )
-
-        # Find sample with lowest and highest mapping rate
         low_sample = host_stats.loc[host_stats["host_removal_rate"].idxmin()]
         high_sample = host_stats.loc[host_stats["host_removal_rate"].idxmax()]
 
         paragraphs.append(
-            f"Host 매핑률 비교에서 {low_sample['sample']} ({low_sample['host_removal_rate']:.1f}%)과 "
-            f"{high_sample['sample']} ({high_sample['host_removal_rate']:.1f}%) 사이에 "
-            f"현저한 차이가 관찰되었습니다. "
-            f"{low_sample['sample']}의 낮은 매핑률은 host RNA의 분해(죽은 샘플)를 시사하며, "
-            f"이로 인해 전체 RNA 중 바이러스 유래 RNA의 비율이 상대적으로 높게 나타납니다. "
-            f"반면, {high_sample['sample']}의 높은 매핑률({high_sample['host_removal_rate']:.1f}%)은 "
-            f"활발한 세포 활동(살아있는 샘플)에서 기인한 풍부한 host RNA를 반영합니다."
+            f"Host mapping rates varied across samples: "
+            f"{low_sample['sample']} ({low_sample['host_removal_rate']:.1f}%) "
+            f"and {high_sample['sample']} ({high_sample['host_removal_rate']:.1f}%). "
+            f"Such variation may be attributable to differences in sample RNA integrity, "
+            f"library preparation quality, reference genome completeness, or biological "
+            f"condition. Without additional sample metadata, a specific cause cannot "
+            f"be determined."
         )
 
-    # --- Key virus findings ---
+    # --- Key virus findings (auto-detected, not hardcoded) ---
     if not classified_families.empty:
         top3 = classified_families.head(3)
-        top_text = ", ".join([f"{name} ({count}개 contig)" for name, count in top3.items()])
+        top_text = ", ".join([f"{name} ({count} contigs)" for name, count in top3.items()])
         paragraphs.append(
-            f"주요 바이러스 분류군은 {top_text}으로 나타났습니다."
+            f"The most frequently detected viral families were {top_text}."
         )
 
     # --- Per-sample coverage insights ---
-    if coverage_data and not bigtable.empty:
+    has_cov_source = bool(coverage_data) or (
+        "coverage" in bigtable.columns and "sample" in bigtable.columns
+    )
+    if has_cov_source and not bigtable.empty:
         cov_table = _build_per_sample_coverage_table(bigtable, coverage_data)
         cov_cols = [c for c in cov_table.columns if c.endswith("_cov")]
 
         if len(cov_cols) >= 2 and not cov_table.empty:
-            # Count contigs detected predominantly in each sample
             for col in cov_cols:
                 sample_name = col.replace("_cov", "")
-                n_dominant = (cov_table[col] > 10).sum()  # coverage > 10x
+                n_dominant = (cov_table[col] > 10).sum()
                 paragraphs.append(
-                    f"{sample_name}에서 coverage > 10x인 바이러스 contig: {n_dominant}개"
+                    f"{sample_name}: {n_dominant} viral contigs with coverage > 10x."
                 )
 
-    # --- Parvoviridae highlight ---
-    if "Parvoviridae" in families.index:
-        parvo_contigs = bigtable[bigtable["family"] == "Parvoviridae"]
-        paragraphs.append(
-            f"특히 Parvoviridae (덴소바이러스과)가 {len(parvo_contigs)}개 contig으로 탐지되었습니다. "
-            "Parvoviridae에 속하는 곤충 덴소바이러스(densovirus)는 곤충의 주요 병원체로, "
-            "높은 coverage는 활발한 바이러스 증식을 시사합니다."
-        )
-
-    # --- Diversity ---
-    if "shannon" in alpha.columns:
+    # --- Diversity (hedged) ---
+    if "shannon" in alpha.columns and not alpha.empty:
         mean_shannon = alpha["shannon"].mean()
         paragraphs.append(
-            f"Shannon diversity index {mean_shannon:.3f}로, "
-            "중간 수준의 바이러스 다양성이 확인되었습니다."
+            f"The mean Shannon diversity index was {mean_shannon:.3f}, "
+            f"suggesting a {'moderate' if 1.0 <= mean_shannon <= 2.5 else 'limited' if mean_shannon < 1.0 else 'relatively high'} "
+            f"level of viral diversity in the analyzed samples."
         )
 
     return paragraphs
+
+
+# ---------------------------------------------------------------------------
+# @TASK B7 - Automatic limitations generator
+# @SPEC docs/planning/10-workplan-v2-report-framework.md#B7
+# ---------------------------------------------------------------------------
+
+
+def _generate_limitations(n_samples: int) -> list[str]:
+    """Generate context-aware limitations paragraphs."""
+    limitations = []
+
+    if n_samples < 3:
+        limitations.append(
+            f"This analysis was performed on {n_samples} sample(s), which "
+            f"limits statistical inference and diversity comparisons."
+        )
+
+    # RNA-seq caveat (always relevant for virome metatranscriptomics)
+    limitations.append(
+        "Detection of DNA viruses in RNA-seq data reflects viral transcripts "
+        "rather than genomic DNA abundance. Viral load estimates for DNA viruses "
+        "should be interpreted accordingly."
+    )
+
+    # Co-assembly caveat
+    limitations.append(
+        "Co-assembly improves genome recovery but may obscure sample-specific "
+        "viral presence/absence. Per-sample read mapping was used to mitigate "
+        "this limitation, although chimeric contigs cannot be entirely excluded."
+    )
+
+    # DB completeness
+    limitations.append(
+        "Taxonomic assignments depend on reference database completeness. "
+        "A substantial proportion of viral 'dark matter' (uncharacterized viruses) "
+        "may remain undetected or unclassified."
+    )
+
+    # Assembly-based
+    limitations.append(
+        "Assembly-based approaches can only recover viruses with sufficient "
+        "read coverage. Low-abundance viruses may be missed entirely."
+    )
+
+    return limitations
+
+
+# ---------------------------------------------------------------------------
+# @TASK B6 - Conditional diversity section
+# @SPEC docs/planning/10-workplan-v2-report-framework.md#B6
+# ---------------------------------------------------------------------------
+
+
+def _build_diversity_section(
+    builder: ReportBuilder,
+    alpha: pd.DataFrame,
+    pcoa: pd.DataFrame,
+    n_samples: int,
+    alpha_fig_path: Path | None,
+    pcoa_fig_path: Path | None,
+    fig_counter: int,
+    table_counter: int,
+) -> tuple[int, int]:
+    """Build the diversity analysis section conditionally based on n_samples.
+
+    Returns updated (fig_counter, table_counter).
+    """
+    builder.add_heading("7. Diversity Analysis", level=1)
+
+    if n_samples >= 3:
+        # Full alpha + beta + PCoA
+        builder.add_heading("7.1 Alpha Diversity", level=2)
+        if alpha_fig_path:
+            fig_counter += 1
+            builder.add_figure(alpha_fig_path,
+                             caption=f"Figure {fig_counter}. Alpha diversity metrics.",
+                             width_inches=6.0)
+        if not alpha.empty:
+            table_counter += 1
+            builder.add_table(alpha.copy(), title=f"Table {table_counter}. Alpha Diversity Metrics")
+
+        builder.add_heading("7.2 Beta Diversity", level=2)
+        if pcoa_fig_path:
+            fig_counter += 1
+            builder.add_figure(pcoa_fig_path,
+                             caption=f"Figure {fig_counter}. PCoA ordination (Bray-Curtis).",
+                             width_inches=6.0)
+        else:
+            builder.add_paragraph(
+                "Beta diversity ordination requires 3 or more samples with "
+                "sufficient variation. PCoA results were not available."
+            )
+
+    elif n_samples == 2:
+        # Comparison mode
+        builder.add_heading("7.1 Two-sample Comparison", level=2)
+        builder.add_paragraph(
+            "With only 2 samples, formal statistical tests (e.g., PERMANOVA) "
+            "are not applicable. The following comparison is descriptive only."
+        )
+        if not alpha.empty:
+            table_counter += 1
+            builder.add_table(alpha.copy(), title=f"Table {table_counter}. Alpha Diversity Comparison (2 samples)")
+        if alpha_fig_path:
+            fig_counter += 1
+            builder.add_figure(alpha_fig_path,
+                             caption=f"Figure {fig_counter}. Alpha diversity comparison.",
+                             width_inches=6.0)
+
+    else:
+        # Single sample profile
+        builder.add_heading("7.1 Single-sample Viral Profile", level=2)
+        builder.add_paragraph(
+            "With a single sample, diversity comparisons are not applicable. "
+            "The viral community profile is presented below."
+        )
+        if not alpha.empty:
+            table_counter += 1
+            builder.add_table(alpha.copy(), title=f"Table {table_counter}. Single-sample Diversity Metrics")
+
+    return fig_counter, table_counter
 
 
 # ---------------------------------------------------------------------------
@@ -703,12 +1143,10 @@ def generate_report(
     # Determine actual sample names from coverage files
     sample_names = sorted(coverage_data.keys()) if coverage_data else []
     if not sample_names:
-        # Fallback: try to get from bigtable sample column
         if "sample" in bigtable.columns:
             unique_samples = bigtable["sample"].dropna().unique().tolist()
-            # Exclude 'coassembly' as it's not a real sample
             sample_names = [s for s in unique_samples if s.lower() != "coassembly"]
-    n_samples = len(sample_names) if sample_names else 1  # At minimum the co-assembly
+    n_samples = len(sample_names) if sample_names else 1
 
     # Load host removal stats
     host_stats = pd.DataFrame()
@@ -722,12 +1160,11 @@ def generate_report(
             pass
 
     # Load BBDuk stats
-    bbduk_stats = []
+    bbduk_stats: list[dict] = []
     qc_dir = Path(host_stats_dir) if host_stats_dir else None
     if qc_dir:
         bbduk_stats = _load_bbduk_stats(qc_dir)
 
-    # If sample_names is still empty, derive from host_stats
     if not sample_names and not host_stats.empty:
         sample_names = host_stats["sample"].tolist()
         n_samples = len(sample_names)
@@ -749,28 +1186,24 @@ def generate_report(
     cov_table = _build_per_sample_coverage_table(bigtable, coverage_data)
 
     # ------------------------------------------------------------------
+    # @TASK B5 - Detect top virus automatically
+    # ------------------------------------------------------------------
+    top_virus = detect_top_virus(bigtable)
+
+    # ------------------------------------------------------------------
     # Generate figures
     # ------------------------------------------------------------------
-    # Figure: Host mapping rate comparison
     host_fig_path = _plot_host_mapping_comparison(
         host_stats, figures_dir / "host_mapping_comparison.png"
     )
-
-    # Figure: BBDuk QC bar chart
     qc_fig_path = _plot_qc_barchart(bbduk_stats, figures_dir / "qc_bbduk_barchart.png")
-
-    # Figure: Detection method bar chart
     det_fig_path = _plot_detection_barchart(bigtable, figures_dir / "detection_barchart.png")
-
-    # Figure: Family composition pie chart
+    # B1/C2: stacked barplot instead of pie chart
     family_fig_path = _plot_family_composition(bigtable, figures_dir / "family_composition.png")
-
-    # Figure: Per-sample coverage heatmap
     cov_heatmap_path = _plot_per_sample_coverage_heatmap(
         cov_table, figures_dir / "per_sample_coverage_heatmap.png"
     )
 
-    # Figure: Taxonomic barplot (relative abundance)
     meta_cols = [c for c in ["taxon", "taxid", "rank"] if c in matrix.columns]
     sample_matrix_cols = [c for c in matrix.columns if c not in meta_cols]
     viz_matrix = matrix.set_index("taxon")[sample_matrix_cols] if "taxon" in matrix.columns else matrix[sample_matrix_cols]
@@ -783,239 +1216,348 @@ def generate_report(
     try:
         barplot_path = plot_barplot(viz_matrix, figures_dir / "composition_barplot.png")
     except Exception as e:
-        logger.warning(f"Barplot generation failed: {e}")
+        logger.warning("Barplot generation failed: %s", e)
 
     try:
         heatmap_path = plot_heatmap(viz_matrix, figures_dir / "taxonomic_heatmap.png")
     except Exception as e:
-        logger.warning(f"Heatmap generation failed: {e}")
+        logger.warning("Heatmap generation failed: %s", e)
 
     try:
         alpha_fig_path = plot_alpha_diversity(alpha, figures_dir / "alpha_diversity.png")
     except Exception as e:
-        logger.warning(f"Alpha diversity plot failed: {e}")
+        logger.warning("Alpha diversity plot failed: %s", e)
 
     try:
         if not pcoa.empty:
             pcoa_fig_path = _plot_pcoa_from_coords(pcoa, figures_dir / "pcoa_plot.png")
     except Exception as e:
-        logger.warning(f"PCoA plot failed: {e}")
+        logger.warning("PCoA plot failed: %s", e)
 
     # ------------------------------------------------------------------
     # Build report
     # ------------------------------------------------------------------
     builder = ReportBuilder()
+    fig_counter = 0
+    table_counter = 0
 
-    # ---- 1. 분석 개요 ----
-    builder.add_heading("1. 분석 개요", level=1)
-    builder.add_heading("1.1 프로젝트 정보", level=2)
+    # ================================================================
+    # Table of Contents (with hyperlinks)
+    # ================================================================
+    builder.add_table_of_contents("Table of Contents")
 
+    # ================================================================
+    # 0. Executive Summary (B1 new section)
+    # ================================================================
+    builder.add_heading("0. Executive Summary", level=1)
+
+    exec_paragraphs = _generate_executive_summary(
+        bigtable, n_samples, sample_names, top_virus
+    )
+    for para in exec_paragraphs:
+        builder.add_paragraph(para)
+
+    # ================================================================
+    # How to Use This Report (integrated from ANALYSIS_GUIDE.md)
+    # ================================================================
+    builder.add_heading("How to Use This Report", level=2)
+    builder.add_paragraph(
+        "This report is auto-generated by DeepInvirus and contains:"
+    )
+    builder.add_paragraph(
+        "- Table of Contents (page 1): right-click -> Update Field for clickable links\n"
+        "- Executive Summary: key findings at a glance\n"
+        "- Interactive dashboard: open dashboard.html in a web browser for dynamic exploration\n"
+        "- Raw data: taxonomy/bigtable.tsv for custom analysis in Excel/R/Python\n"
+        "- Figures: figures/ directory contains PNG (300 DPI) and SVG (vector) versions"
+    )
+    builder.add_paragraph(
+        "Detection Confidence Tiers: "
+        "'high' = breadth >= 70% and depth >= 10x (strong evidence); "
+        "'medium' = breadth >= 30% and depth >= 1x (moderate evidence, may need validation); "
+        "'low' = below medium thresholds (weak evidence, possible artifact)."
+    )
+
+    # ================================================================
+    # 1. Methods (B2 - auto-generated, no hardcoding)
+    # ================================================================
+    builder.add_heading("1. Methods", level=1)
+    builder.add_heading("1.1 Project Information", level=2)
+
+    table_counter += 1
     project_info = pd.DataFrame(
         {
-            "항목": [
-                "분석 날짜",
-                "샘플 수",
-                "샘플 이름",
-                "분석 전략",
-                "탐지된 바이러스 contig 수",
-                "파이프라인",
+            "Item": [
+                "Analysis date",
+                "Number of samples",
+                "Sample names",
+                "Assembly strategy",
+                "Viral contigs detected",
+                "Pipeline",
             ],
-            "값": [
+            "Value": [
                 datetime.now().strftime("%Y-%m-%d"),
                 str(n_samples),
                 ", ".join(sample_names) if sample_names else "coassembly",
-                "Co-assembly (전체 샘플 통합 어셈블리) + per-sample coverage mapping",
-                str(len(bigtable)),
+                "Co-assembly (pooled reads) + per-sample coverage mapping",
+                str(bigtable["seq_id"].nunique()),
                 "DeepInvirus v1.0",
             ],
         }
     )
-    builder.add_table(project_info, title="Table 1. Project Information")
+    builder.add_table(project_info, title=f"Table {table_counter}. Project Information")
 
-    builder.add_heading("1.2 분석 파이프라인 요약", level=2)
+    # @TASK B2 - Methods auto-generated: minimap2 (NOT Bowtie2), scipy (NOT scikit-bio)
+    builder.add_heading("1.2 Analysis Pipeline", level=2)
     builder.add_paragraph(
-        "DeepInvirus 파이프라인은 다음의 단계를 순차적으로 수행합니다: "
-        "(1) BBDuk을 이용한 어댑터 제거 및 품질 관리, "
-        "(2) Bowtie2를 이용한 host RNA 제거, "
-        "(3) MEGAHIT을 이용한 co-assembly, "
-        "(4) geNomad 및 Diamond BLASTx를 이용한 바이러스 서열 탐지, "
-        "(5) MMseqs2 + TaxonKit를 이용한 분류학적 분석, "
-        "(6) CoverM을 이용한 샘플별 coverage 산출, "
-        "(7) 다양성 지수 산출 및 보고서 생성."
+        "The DeepInvirus pipeline performs the following steps sequentially: "
+        "(1) Adapter removal and quality control using BBDuk; "
+        "(2) Host RNA removal using minimap2; "
+        "(3) Co-assembly using MEGAHIT; "
+        "(4) Viral sequence detection using geNomad and Diamond BLASTx; "
+        "(5) Taxonomic classification using MMseqs2 and TaxonKit; "
+        "(6) Per-sample coverage quantification using CoverM; "
+        "(7) Diversity analysis using scipy and numpy."
     )
 
     if sample_names and len(sample_names) >= 2:
         builder.add_paragraph(
-            "본 분석에서는 co-assembly 전략을 채택하여 모든 샘플의 read를 통합 어셈블리한 후, "
-            "각 샘플의 read를 개별적으로 매핑하여 contig별 per-sample coverage를 산출하였습니다. "
-            "이를 통해 co-assembly의 민감도 이점을 유지하면서도 샘플 간 바이러스 분포 차이를 "
-            "정량적으로 비교할 수 있습니다."
+            "A co-assembly strategy was employed, pooling reads from all samples "
+            "for a single assembly. Individual sample reads were then mapped back "
+            "to the co-assembly contigs to derive per-sample coverage profiles. "
+            "This approach maximizes sensitivity for genome recovery while enabling "
+            "quantitative cross-sample comparisons."
         )
 
-    # ---- 2. 품질 관리 결과 ----
-    builder.add_heading("2. 품질 관리 (QC) 결과", level=1)
+    table_counter += 1
+    params_table = pd.DataFrame(
+        {
+            "Parameter": [
+                "Adapter removal",
+                "Host removal",
+                "Assembler",
+                "Virus detection",
+                "Taxonomy",
+                "Coverage",
+                "Diversity",
+            ],
+            "Value": [
+                "BBDuk (Illumina adapters, PCR primers, PhiX)",
+                "minimap2 (splice-aware mapping)",
+                "MEGAHIT (co-assembly)",
+                "geNomad + Diamond BLASTx",
+                "MMseqs2 + TaxonKit",
+                "CoverM (mean, trimmed mean, covered bases)",
+                "scipy + numpy (Shannon, Simpson, Bray-Curtis)",
+            ],
+        }
+    )
+    builder.add_table(params_table, title=f"Table {table_counter}. Analysis Parameters")
 
-    # 2.1 BBDuk 통계
-    builder.add_heading("2.1 어댑터 제거 (BBDuk)", level=2)
+    # ================================================================
+    # 2. QC Results (B8 - waterfall table)
+    # ================================================================
+    builder.add_heading("2. QC Results", level=1)
+
+    builder.add_heading("2.1 Adapter Removal (BBDuk)", level=2)
     if bbduk_stats:
         bbduk_df = pd.DataFrame(bbduk_stats)
         display_df = bbduk_df[["sample", "total_reads", "adapter_removed", "adapter_pct", "phix_removed", "clean_reads"]].copy()
         display_df.columns = ["Sample", "Total Reads", "Adapter Removed", "Adapter %", "PhiX Removed", "Clean Reads"]
-        # Format numbers with commas
         for col in ["Total Reads", "Adapter Removed", "PhiX Removed", "Clean Reads"]:
             display_df[col] = display_df[col].apply(lambda x: f"{x:,}")
         display_df["Adapter %"] = display_df["Adapter %"].apply(lambda x: f"{x:.2f}%")
-        builder.add_table(display_df, title="Table 2. BBDuk Adapter Removal Statistics")
+        table_counter += 1
+        builder.add_table(display_df, title=f"Table {table_counter}. BBDuk Adapter Removal Statistics")
 
         if qc_fig_path:
+            fig_counter += 1
             builder.add_figure(qc_fig_path,
-                             caption="Figure 1. BBDuk adapter removal: total reads vs clean reads per sample",
+                             caption=f"Figure {fig_counter}. BBDuk adapter removal statistics.",
                              width_inches=6.0)
-
-        builder.add_paragraph(
-            "BBDuk을 이용하여 Illumina 어댑터, PCR primer, PhiX 서열을 제거하였습니다. "
-            f"어댑터 제거율은 {bbduk_stats[0]['adapter_pct']:.1f}% ~ "
-            f"{bbduk_stats[-1]['adapter_pct']:.1f}% 범위를 보였습니다."
-        )
     else:
-        builder.add_paragraph("BBDuk 통계 파일이 제공되지 않았습니다.")
+        builder.add_paragraph("BBDuk statistics files were not provided.")
 
-    # 2.2 Host removal
-    builder.add_heading("2.2 Host RNA 제거", level=2)
+    # @TASK B8 - Read flow waterfall table
+    builder.add_heading("2.2 Read Flow Waterfall", level=2)
+    waterfall = _build_qc_waterfall(bbduk_stats, host_stats)
+    if not waterfall.empty:
+        table_counter += 1
+        builder.add_table(waterfall, title=f"Table {table_counter}. Read Flow Waterfall")
+    else:
+        builder.add_paragraph("Insufficient data to build read flow waterfall table.")
+
+    # ================================================================
+    # 3. Host Removal Statistics
+    # ================================================================
+    builder.add_heading("3. Host Removal Statistics", level=1)
     if not host_stats.empty:
-        host_display = host_stats.copy()
-        # Format for display
         host_display_formatted = pd.DataFrame({
-            "Sample": host_display["sample"],
-            "Total Reads": host_display["total_reads"].apply(lambda x: f"{x:,}"),
-            "Host Mapped": host_display["mapped_reads"].apply(lambda x: f"{x:,}"),
-            "Non-host Reads": host_display["unmapped_reads"].apply(lambda x: f"{x:,}"),
-            "Host Mapping Rate (%)": host_display["host_removal_rate"].apply(lambda x: f"{x:.2f}"),
+            "Sample": host_stats["sample"],
+            "Total Reads": host_stats["total_reads"].apply(lambda x: f"{x:,}"),
+            "Host Mapped": host_stats["mapped_reads"].apply(lambda x: f"{x:,}"),
+            "Non-host Reads": host_stats["unmapped_reads"].apply(lambda x: f"{x:,}"),
+            "Host Mapping Rate (%)": host_stats["host_removal_rate"].apply(lambda x: f"{x:.2f}"),
         })
-        builder.add_table(host_display_formatted, title="Table 3. Host Removal Mapping Statistics")
+        table_counter += 1
+        builder.add_table(host_display_formatted, title=f"Table {table_counter}. Host Removal Statistics")
 
         if host_fig_path:
+            fig_counter += 1
             builder.add_figure(host_fig_path,
-                             caption="Figure 2. Host mapping rate comparison (grey=host RNA, blue=non-host)",
+                             caption=f"Figure {fig_counter}. Host mapping rate comparison.",
                              width_inches=6.0)
 
-        # Scientific interpretation
+        # @TASK B3 - Hedged interpretation (no dead/alive language)
         if len(host_stats) >= 2:
             low = host_stats.loc[host_stats["host_removal_rate"].idxmin()]
             high = host_stats.loc[host_stats["host_removal_rate"].idxmax()]
             builder.add_paragraph(
-                f"Host 매핑률에서 샘플 간 현저한 차이가 관찰되었습니다. "
-                f"{low['sample']}은 host 매핑률 {low['host_removal_rate']:.1f}%로, "
-                f"전체 RNA의 약 {100-low['host_removal_rate']:.1f}%가 non-host 유래입니다. "
-                f"반면, {high['sample']}은 매핑률 {high['host_removal_rate']:.1f}%로, "
-                f"대부분의 RNA가 숙주에서 유래하였습니다."
-            )
-            builder.add_paragraph(
-                "이러한 차이는 샘플의 생물학적 상태를 반영합니다. "
-                f"{low['sample']} (낮은 매핑률)은 세포 사멸로 인해 host RNA가 분해되어 "
-                "상대적으로 바이러스/환경 유래 RNA의 비율이 높은 것으로 해석됩니다. "
-                f"{high['sample']} (높은 매핑률)은 활발한 세포 활동으로 인해 host RNA가 "
-                "풍부하여, 실제 바이러스 검출이 매우 제한적입니다."
+                f"Host mapping rates ranged from {low['host_removal_rate']:.1f}% "
+                f"({low['sample']}) to {high['host_removal_rate']:.1f}% "
+                f"({high['sample']}). Variation in host mapping rates may reflect "
+                f"differences in RNA integrity, library quality, or biological "
+                f"sample condition. Causal attribution requires additional metadata "
+                f"and is not attempted here."
             )
     else:
-        builder.add_paragraph("Host removal 통계 파일이 제공되지 않았습니다.")
+        builder.add_paragraph("Host removal statistics were not provided.")
 
-    # ---- 3. 바이러스 탐지 결과 ----
-    builder.add_heading("3. 바이러스 탐지 결과", level=1)
+    # ================================================================
+    # 4. Virus Detection
+    # ================================================================
+    builder.add_heading("4. Virus Detection", level=1)
 
-    builder.add_heading("3.1 탐지 방법별 결과 요약", level=2)
+    builder.add_heading("4.1 Detection Method Summary", level=2)
     if "detection_method" in bigtable.columns:
         det_summary = (
-            bigtable.groupby("detection_method")
+            bigtable.drop_duplicates(subset=["seq_id"])
+            .groupby("detection_method")
             .agg(sequence_count=("seq_id", "count"))
             .reset_index()
         )
-        builder.add_table(det_summary, title="Table 4. Detection Method Summary")
+        table_counter += 1
+        builder.add_table(det_summary, title=f"Table {table_counter}. Detection Method Summary")
 
     builder.add_paragraph(
-        f"Co-assembly를 통해 총 {len(bigtable)}개의 바이러스 유래 contig이 탐지되었습니다. "
-        f"Contig 길이 범위: {bigtable['length'].min():,}bp ~ {bigtable['length'].max():,}bp "
-        f"(중앙값: {bigtable['length'].median():,.0f}bp)."
+        f"Co-assembly yielded {bigtable['seq_id'].nunique()} viral contigs. "
+        f"Contig length range: {bigtable['length'].min():,} bp - {bigtable['length'].max():,} bp "
+        f"(median: {bigtable['length'].median():,.0f} bp)."
     )
 
     if det_fig_path:
+        fig_counter += 1
         builder.add_figure(det_fig_path,
-                         caption="Figure 3. Virus detection by method",
+                         caption=f"Figure {fig_counter}. Virus detection by method.",
                          width_inches=6.0)
 
-    # 3.2 Family별 분포
-    builder.add_heading("3.2 바이러스 Family별 분포", level=2)
+    # 4.2 Family composition (stacked barplot, NOT pie chart - B1/C2)
+    builder.add_heading("4.2 Virus Family Composition", level=2)
     if "family" in bigtable.columns:
-        family_summary = bigtable["family"].value_counts().reset_index()
-        family_summary.columns = ["Family/Order", "Contig Count"]
-        builder.add_table(family_summary, title="Table 5. Virus Family Distribution")
+        family_summary = bigtable.drop_duplicates(subset=["seq_id"])["family"].value_counts().reset_index()
+        family_summary.columns = ["Family", "Contig Count"]
+        table_counter += 1
+        builder.add_table(family_summary, title=f"Table {table_counter}. Virus Family Distribution")
 
     if family_fig_path:
+        fig_counter += 1
         builder.add_figure(family_fig_path,
-                         caption="Figure 4. Virus family composition (by contig count)",
+                         caption=f"Figure {fig_counter}. Virus family composition (by contig count).",
                          width_inches=6.0)
 
-    # 3.3 Per-sample coverage 비교
-    builder.add_heading("3.3 샘플별 바이러스 Coverage 비교", level=2)
+    # ================================================================
+    # 5. Per-sample Coverage Analysis
+    # ================================================================
+    builder.add_heading("5. Per-sample Coverage Analysis", level=1)
     if not cov_table.empty:
         cov_cols = [c for c in cov_table.columns if c.endswith("_cov")]
         if cov_cols:
-            # Display top 20 contigs
             display_cov = cov_table.head(20).copy()
-            # Format coverage values
             for col in cov_cols:
                 display_cov[col] = display_cov[col].apply(
                     lambda x: f"{x:,.1f}" if x >= 1 else (f"{x:.2f}" if x > 0 else "0")
                 )
             display_cov.columns = [c.replace("_cov", " Coverage") if c.endswith("_cov") else c
                                    for c in display_cov.columns]
-            builder.add_table(display_cov, title="Table 6. Per-sample Viral Contig Coverage (Top 20, mean depth)")
+            table_counter += 1
+            builder.add_table(display_cov, title=f"Table {table_counter}. Per-sample Viral Contig Coverage (Top 20)")
 
             builder.add_paragraph(
-                "Coverage 값은 각 샘플의 read를 co-assembly contig에 매핑한 결과의 "
-                "평균 depth를 나타냅니다. 높은 coverage는 해당 바이러스 서열이 "
-                "해당 샘플에서 풍부하게 존재함을 의미합니다."
+                "Coverage values represent the mean read depth when mapping each "
+                "sample's reads to the co-assembly contigs. Higher coverage indicates "
+                "greater nucleic acid abundance of the corresponding viral sequence "
+                "in that sample."
             )
 
         if cov_heatmap_path:
+            fig_counter += 1
             builder.add_figure(cov_heatmap_path,
-                             caption="Figure 5. Per-sample viral contig coverage heatmap (log10 scale)",
+                             caption=f"Figure {fig_counter}. Per-sample viral contig coverage heatmap (log10 scale).",
                              width_inches=6.5)
     else:
         builder.add_paragraph(
-            "Per-sample coverage 데이터가 제공되지 않았습니다. "
-            "Coverage 파일은 --coverage-dir 옵션으로 지정할 수 있습니다."
+            "Per-sample coverage data was not provided. "
+            "Use --coverage-dir to supply per-sample coverage files."
         )
 
-    # ---- 4. 분류학적 분석 ----
-    builder.add_heading("4. 분류학적 분석", level=1)
+    # ================================================================
+    # 6. Taxonomic Analysis (B9 - universal descriptions)
+    # ================================================================
+    builder.add_heading("6. Taxonomic Analysis", level=1)
 
-    builder.add_heading("4.1 바이러스 분류군 개요", level=2)
+    builder.add_heading("6.1 Community Composition", level=2)
     if barplot_path:
+        fig_counter += 1
         builder.add_figure(barplot_path,
-                         caption="Figure 6. Viral community composition (relative abundance, co-assembly)",
+                         caption=f"Figure {fig_counter}. Viral community composition (relative abundance).",
                          width_inches=6.0)
 
-    builder.add_heading("4.2 분류학적 히트맵", level=2)
+    builder.add_heading("6.2 Taxonomic Heatmap", level=2)
     if heatmap_path:
+        fig_counter += 1
         builder.add_figure(heatmap_path,
-                         caption="Figure 7. Taxonomic heatmap (log10 RPM+1, co-assembly)",
+                         caption=f"Figure {fig_counter}. Taxonomic heatmap (log10 RPM+1).",
                          width_inches=6.0)
 
-    # 4.3 주요 바이러스 Family 상세 설명
-    builder.add_heading("4.3 주요 바이러스 Family 상세 설명", level=2)
+    # 6.3 Family descriptions (B9 - universalized)
+    builder.add_heading("6.3 Virus Family Descriptions", level=2)
     if "family" in bigtable.columns:
-        classified = bigtable[bigtable["family"] != "Unclassified"]["family"].value_counts()
-        for family_name, count in classified.items():
-            builder.add_heading(f"4.3.{list(classified.index).index(family_name)+1} {family_name} ({count}개 contig)", level=3)
+        _unique_bt = bigtable.drop_duplicates(subset=["seq_id"])
+        classified = _unique_bt[_unique_bt["family"] != "Unclassified"]["family"].value_counts()
+        for idx, (family_name, count) in enumerate(classified.items()):
+            builder.add_heading(f"6.3.{idx+1} {family_name} ({count} contigs)", level=3)
 
             description = FAMILY_DESCRIPTIONS.get(
                 family_name,
-                f"{family_name}에 대한 상세 설명이 아직 등록되지 않았습니다."
+                f"No detailed description is currently available for {family_name}."
             )
             builder.add_paragraph(description)
 
-            # Show coverage for this family's contigs
+            # Virus origin context (B4)
+            origin_info = VIRUS_ORIGIN.get(family_name)
+            if origin_info:
+                origin_text = (
+                    f"Probable origin: {origin_info['origin']} "
+                    f"(confidence: {origin_info['confidence']})."
+                )
+                if origin_info.get("note"):
+                    origin_text += f" Note: {origin_info['note']}."
+                builder.add_paragraph(origin_text)
+            else:
+                # Check class-level fallback
+                if "class" in bigtable.columns:
+                    family_rows = bigtable[bigtable["family"] == family_name]
+                    classes = family_rows["class"].dropna().unique()
+                    for cls in classes:
+                        cls_info = VIRUS_ORIGIN_CLASS_FALLBACK.get(cls)
+                        if cls_info:
+                            builder.add_paragraph(
+                                f"Class-level origin ({cls}): {cls_info['origin']} "
+                                f"(confidence: {cls_info['confidence']}). "
+                                f"{cls_info.get('note', '')}"
+                            )
+
+            # Per-family coverage table
             if not cov_table.empty:
                 family_contigs = cov_table[cov_table["family"] == family_name]
                 if not family_contigs.empty:
@@ -1031,84 +1573,56 @@ def generate_report(
                         builder.add_table(fc_display.reset_index(drop=True),
                                         title=f"Table. {family_name} contig coverage by sample")
 
-    # ---- 5. 다양성 분석 ----
-    builder.add_heading("5. 다양성 분석", level=1)
-
-    builder.add_heading("5.1 Alpha diversity", level=2)
-    if alpha_fig_path:
-        builder.add_figure(alpha_fig_path,
-                         caption="Figure 8. Alpha diversity (co-assembly basis)",
-                         width_inches=6.0)
-
-    builder.add_table(alpha.copy(), title="Table 7. Alpha Diversity Metrics")
-
-    builder.add_paragraph(
-        "Alpha diversity 지수는 co-assembly 기준으로 산출되었습니다. "
-        "Per-sample 다양성 비교를 위해서는 각 샘플별 독립 어셈블리 또는 "
-        "coverage 기반 풍부도 추정이 필요합니다."
+    # ================================================================
+    # 7. Diversity Analysis (B6 - conditional on n_samples)
+    # ================================================================
+    fig_counter, table_counter = _build_diversity_section(
+        builder, alpha, pcoa, n_samples,
+        alpha_fig_path, pcoa_fig_path,
+        fig_counter, table_counter,
     )
 
-    builder.add_heading("5.2 Beta diversity", level=2)
-    if pcoa_fig_path:
-        builder.add_figure(pcoa_fig_path,
-                         caption="Figure 9. PCoA ordination (Bray-Curtis)",
-                         width_inches=6.0)
-    else:
-        builder.add_paragraph(
-            "Beta diversity PCoA 분석은 co-assembly 단일 샘플로 인해 수행되지 않았습니다. "
-            "향후 샘플 수 증가 시 샘플 간 유사도 비교가 가능합니다."
-        )
-
-    # ---- 6. 결론 및 해석 ----
-    builder.add_heading("6. 결론 및 해석", level=1)
+    # ================================================================
+    # 8. Conclusions (B3 - hedged, multi-hypothesis)
+    # ================================================================
+    builder.add_heading("8. Conclusions", level=1)
 
     conclusion_paragraphs = _generate_conclusion(
-        bigtable, host_stats, coverage_data, alpha, sample_names
+        bigtable, host_stats, coverage_data, alpha, sample_names, n_samples
     )
     for para in conclusion_paragraphs:
         builder.add_paragraph(para)
 
+    # ================================================================
+    # 9. Limitations (B7 - auto-generated)
+    # ================================================================
+    builder.add_heading("9. Limitations", level=1)
+
+    limitations = _generate_limitations(n_samples)
+    for lim in limitations:
+        builder.add_paragraph(lim)
+
+    # ================================================================
+    # Appendix
+    # ================================================================
+    builder.add_heading("Appendix", level=1)
+
+    builder.add_heading("A. Complete Viral Contig List", level=2)
     builder.add_paragraph(
-        "상세한 분류학적 정보 및 분석 파라미터는 부록을 참조하시기 바랍니다."
+        "The complete viral contig list with all classification and coverage data "
+        "is available in the output file: taxonomy/bigtable.tsv"
+    )
+    builder.add_paragraph(
+        "This TSV file contains columns including seq_id, sample, family, "
+        "coverage, breadth, detection_confidence, and RPM for each contig x sample "
+        "combination. Open in Excel, R, or Python for custom analysis."
+    )
+    builder.add_paragraph(
+        f"Total: {bigtable['seq_id'].nunique()} unique contigs across "
+        f"{bigtable['sample'].nunique() if 'sample' in bigtable.columns else 'N/A'} samples."
     )
 
-    # ---- 부록 ----
-    builder.add_heading("부록", level=1)
-
-    builder.add_heading("A. 전체 바이러스 Contig 목록", level=2)
-    bt_display = bigtable.copy()
-    display_bt_cols = [c for c in ["seq_id", "sample", "family", "length", "detection_method", "detection_score", "target", "pident"]
-                       if c in bt_display.columns]
-    if display_bt_cols:
-        builder.add_table(bt_display[display_bt_cols],
-                        title="Table A1. Complete Viral Contig List")
-
-    builder.add_heading("B. 분석 파라미터", level=2)
-    params = pd.DataFrame(
-        {
-            "Parameter": [
-                "Adapter removal",
-                "Host removal",
-                "Assembler",
-                "Virus detection",
-                "Taxonomy",
-                "Coverage",
-                "Diversity",
-            ],
-            "Value": [
-                "BBDuk (Illumina adapters, PCR primers, PhiX)",
-                "Bowtie2 (--very-sensitive-local)",
-                "MEGAHIT (co-assembly)",
-                "geNomad + Diamond BLASTx",
-                "MMseqs2 + TaxonKit",
-                "CoverM (mean, trimmed mean, covered bases)",
-                "scikit-bio (Shannon, Simpson, Bray-Curtis)",
-            ],
-        }
-    )
-    builder.add_table(params, title="Table B1. Analysis Parameters")
-
-    builder.add_heading("C. 소프트웨어 버전", level=2)
+    builder.add_heading("B. Software Versions", level=2)
     versions = pd.DataFrame(
         {
             "Software": [
@@ -1116,7 +1630,7 @@ def generate_report(
                 "Nextflow",
                 "Python",
                 "BBDuk (BBTools)",
-                "Bowtie2",
+                "minimap2",
                 "MEGAHIT",
                 "geNomad",
                 "Diamond",
@@ -1128,7 +1642,7 @@ def generate_report(
                 ">=23.10",
                 f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
                 "39.06+",
-                "2.5+",
+                "2.24+",
                 "1.2+",
                 "1.7+",
                 "2.1+",
@@ -1137,7 +1651,200 @@ def generate_report(
             ],
         }
     )
-    builder.add_table(versions, title="Table C1. Software Versions")
+    builder.add_table(versions, title="Table B1. Software Versions")
+
+    # ---- Appendix C: Parameter Dictionary ----
+    builder.add_heading("C. Parameter Dictionary", level=2)
+
+    param_data = pd.DataFrame({
+        "Parameter": [
+            "--reads", "--host", "--outdir", "--trimmer", "--assembler",
+            "--search", "--skip_ml", "--db_dir", "--checkv_db",
+            "--min_contig_len", "--min_virus_score", "--min_bitscore",
+        ],
+        "Type": [
+            "string", "string", "string", "string", "string",
+            "string", "boolean", "string", "string",
+            "integer", "float", "integer",
+        ],
+        "Default": [
+            "(required)", "none", "./results", "bbduk", "megahit",
+            "sensitive", "false", "auto-download", "null (skip)",
+            "500", "0.7", "50",
+        ],
+        "Description": [
+            "Path to paired FASTQ files (glob pattern, e.g. '/data/*_R{1,2}.fastq.gz')",
+            "Host genome(s) for read removal. Comma-separated: tmol,zmor,human. 'none' = skip.",
+            "Output directory path",
+            "Read trimming tool: bbduk or fastp",
+            "De novo assembler: megahit or metaspades",
+            "Diamond search sensitivity: fast or sensitive",
+            "Skip ML-based virus detection (geNomad). Diamond-only mode.",
+            "Custom database directory. Auto-downloads if not provided.",
+            "CheckV database path. Genome quality assessment skipped if null.",
+            "Minimum contig length (bp) for assembly output",
+            "Minimum geNomad virus score threshold (0-1)",
+            "Minimum Diamond bitscore filter",
+        ],
+    })
+    builder.add_table(param_data, title="Table C1. Pipeline Parameters")
+    builder.add_paragraph(
+        "This information is also available in the output folder's "
+        "ANALYSIS_GUIDE.md and README.md files."
+    )
+
+    # ---- Appendix D: Results Dictionary ----
+    builder.add_heading("D. Results Dictionary", level=2)
+
+    builder.add_heading("D.1 Output Directory Structure", level=3)
+    output_structure = pd.DataFrame({
+        "Path": [
+            "qc/multiqc_report.html",
+            "qc/*.bbduk_stats.txt",
+            "qc/fastqc/",
+            "qc/*.host_removal_stats.txt",
+            "assembly/contigs.fa",
+            "assembly/assembly_stats.tsv",
+            "detection/genomad/",
+            "detection/diamond/",
+            "detection/checkv/ (optional)",
+            "taxonomy/bigtable.tsv",
+            "taxonomy/sample_taxon_matrix.tsv",
+            "taxonomy/sample_counts.tsv",
+            "coverage/*_coverage.tsv",
+            "diversity/alpha_diversity.tsv",
+            "diversity/beta_diversity.tsv",
+            "diversity/pcoa_coordinates.tsv",
+            "figures/ (PNG + SVG)",
+            "dashboard.html",
+            "report.docx",
+        ],
+        "Description": [
+            "MultiQC aggregate QC report",
+            "BBDuk adapter removal statistics per sample",
+            "FastQC reports (raw + trimmed reads)",
+            "Host mapping statistics per sample",
+            "Assembled contigs (≥500bp, co-assembly)",
+            "Assembly statistics: N50, total length, contig count",
+            "geNomad ML-based virus detection results",
+            "Diamond BLASTx homology search results",
+            "CheckV genome completeness/contamination (when --checkv_db provided)",
+            "Master results table (all info merged, see D.2)",
+            "Family × Sample RPM abundance matrix for diversity analysis",
+            "Per-sample per-taxon read counts",
+            "CoverM per-sample read coverage (depth + breadth)",
+            "Alpha diversity: Shannon, Simpson, Chao1, Pielou evenness",
+            "Bray-Curtis pairwise distance matrix",
+            "PCoA ordination coordinates (PC1, PC2)",
+            "Publication-quality figures in PNG (300 DPI) and SVG (vector)",
+            "Interactive Plotly HTML dashboard (offline-capable)",
+            "This automated Word report",
+        ],
+    })
+    builder.add_table(output_structure, title="Table D1. Output File Structure")
+
+    builder.add_heading("D.2 bigtable.tsv Column Dictionary", level=3)
+    bigtable_dict = pd.DataFrame({
+        "Column": [
+            "seq_id", "sample", "length",
+            "detection_method", "detection_score",
+            "family", "coverage", "breadth",
+            "detection_confidence", "rpm", "count",
+            "taxid", "domain", "phylum", "class", "order",
+            "genus", "species",
+            "ictv_classification", "baltimore_group",
+        ],
+        "Type": [
+            "string", "string", "integer",
+            "string", "float (0-1)",
+            "string", "float", "float (%)",
+            "string", "float", "integer",
+            "integer", "string", "string", "string", "string",
+            "string", "string",
+            "string", "string",
+        ],
+        "Description": [
+            "Contig identifier from co-assembly",
+            "Sample name (from read filename)",
+            "Contig length in base pairs",
+            "Detection method: genomad, diamond, or both",
+            "Detection confidence score (normalized 0-1)",
+            "Virus family (e.g. Parvoviridae, Iflaviridae)",
+            "Mean read depth (CoverM, per sample)",
+            "Genome coverage breadth (% of bases with ≥1x coverage)",
+            "Detection tier: high (breadth≥70%, depth≥10x), medium, low",
+            "Coverage-normalized relative abundance (contig coverage / total sample coverage * 1e6)",
+            "Raw mapped read count",
+            "NCBI taxonomy ID",
+            "Taxonomic domain (e.g. Viruses)",
+            "Taxonomic phylum",
+            "Taxonomic class (e.g. Caudoviricetes)",
+            "Taxonomic order",
+            "Taxonomic genus",
+            "Taxonomic species",
+            "ICTV official classification",
+            "Baltimore classification group (e.g. Group I-VII)",
+        ],
+    })
+    builder.add_table(bigtable_dict, title="Table D2. bigtable.tsv Column Dictionary")
+
+    builder.add_heading("D.3 VIRUS_ORIGIN Classification System", level=3)
+    origin_data = []
+    for family_name, info in VIRUS_ORIGIN.items():
+        origin_data.append({
+            "Family": family_name,
+            "Origin": info["origin"],
+            "Confidence": info["confidence"],
+            "Note": info.get("note", ""),
+        })
+    for class_name, info in VIRUS_ORIGIN_CLASS_FALLBACK.items():
+        origin_data.append({
+            "Family": f"{class_name} (class-level)",
+            "Origin": info["origin"],
+            "Confidence": info["confidence"],
+            "Note": info.get("note", ""),
+        })
+    if origin_data:
+        builder.add_table(
+            pd.DataFrame(origin_data),
+            title="Table D3. Virus Origin Classification (Evidence-Tier System)"
+        )
+    builder.add_paragraph(
+        "Confidence tiers: high = well-established host association; "
+        "medium = generally accepted but exceptions exist; "
+        "low = family-level assignment insufficient, genus-level resolution recommended; "
+        "none = family spans multiple host kingdoms, classification not possible at this level."
+    )
+
+    builder.add_heading("D.4 Report Auto-generation", level=3)
+    report_sections = pd.DataFrame({
+        "Section": [
+            "Executive Summary", "Methods", "QC Results",
+            "Host Removal", "Virus Detection", "Coverage Analysis",
+            "Taxonomic Analysis", "Diversity", "Conclusions", "Limitations",
+        ],
+        "Content": [
+            "Key findings (top virus, contig count, family count)",
+            "Tools, versions, parameters (from pipeline metadata)",
+            "Read counts, adapter removal rates, quality metrics",
+            "Host mapping rates per sample (descriptive, no causal inference)",
+            "Detection methods, family distribution, confidence tiers",
+            "Per-sample heatmap (log10 RPKM), breadth-weighted top contigs",
+            "Family descriptions, VIRUS_ORIGIN evidence-tier classification",
+            "Conditional: n≥3 full diversity, n=2 fold-change, n=1 profile",
+            "Data-driven, scientifically hedged (no overclaiming)",
+            "Sample size, RNA-seq caveats, co-assembly limits, DB completeness",
+        ],
+        "Auto-generated": [
+            "Yes", "Yes", "Yes", "Yes", "Yes",
+            "Yes", "Yes", "Yes (conditional)", "Yes", "Yes",
+        ],
+    })
+    builder.add_table(report_sections, title="Table D4. Report Sections")
+    builder.add_paragraph(
+        "This information is also available in the output folder's "
+        "ANALYSIS_GUIDE.md and README.md files."
+    )
 
     # ------------------------------------------------------------------
     # Save
@@ -1145,7 +1852,6 @@ def generate_report(
     result = builder.save(output_path)
     logger.info("Report generated: %s", result)
 
-    # Clean up temp dir if we created one
     if _tmp_handle is not None:
         _tmp_handle.cleanup()
 

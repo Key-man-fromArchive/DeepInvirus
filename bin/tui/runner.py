@@ -108,6 +108,11 @@ class NextflowRunner:
             if key in params and params[key]:
                 cmd.extend([f"--{key}", str(params[key])])
 
+        # Optional database path parameters
+        for key in ("checkv_db", "exclusion_db"):
+            if params.get(key):
+                cmd.extend([f"--{key}", str(params[key])])
+
         # Boolean flag: only emit when True
         if params.get("skip_ml"):
             cmd.append("--skip_ml")

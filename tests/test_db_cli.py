@@ -200,7 +200,7 @@ class TestComponentSelection:
         try:
             from install_databases import _resolve_components
             result = _resolve_components("all")
-            expected = ["protein", "nucleotide", "genomad", "taxonomy", "host"]
+            expected = ["protein", "nucleotide", "genomad", "taxonomy", "host", "exclusion"]
             assert result == expected, f"Expected {expected}, got {result}"
         finally:
             sys.path.pop(0)

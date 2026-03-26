@@ -1,9 +1,11 @@
-// @TASK T3.2 - Protein homology search using Diamond blastx
+// Protein homology search using Diamond blastx
+// @TASK T3.2 - Diamond blastx protein homology search
 // @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
 
 process DIAMOND_BLASTX {
     tag "$meta.id"
     label 'process_diamond'
+    publishDir "${params.outdir}/detection/diamond", mode: 'copy'
 
     input:
     tuple val(meta), path(contigs)

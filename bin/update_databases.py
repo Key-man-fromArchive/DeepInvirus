@@ -25,7 +25,9 @@ from pathlib import Path
 from install_databases import (
     VALID_HOSTS,
     _load_version,
+    _save_db_config,
     _save_version,
+    download_exclusion_db,
     download_genomad_db,
     download_host_genome,
     download_taxonomy,
@@ -105,6 +107,7 @@ COMPONENT_MAP: dict[str, tuple[str, str]] = {
     "nucleotide": ("viral_nucleotide", "viral_nucleotide"),
     "genomad": ("genomad_db", "genomad_db"),
     "taxonomy": ("taxonomy", "taxonomy"),
+    "exclusion": ("exclusion_db", "exclusion_db"),
     "host": ("host_genomes", "host_genomes"),
 }
 
@@ -125,7 +128,7 @@ def update_component(
 
     Args:
         db_dir: Root database directory.
-        component: Component name (protein/nucleotide/genomad/taxonomy/host).
+        component: Component name (protein/nucleotide/genomad/taxonomy/exclusion/host).
         host: Host genome key (only relevant when component == 'host').
         threads: Thread count for indexing tools.
         dry_run: Plan-only mode.
@@ -165,6 +168,8 @@ def update_component(
             meta = download_genomad_db(db_dir, dry_run=dry_run)
         elif component == "taxonomy":
             meta = download_taxonomy(db_dir, dry_run=dry_run)
+        elif component == "exclusion":
+            meta = download_exclusion_db(db_dir, threads=threads, dry_run=dry_run)
         elif component == "host":
             meta = download_host_genome(db_dir, host=host, threads=threads, dry_run=dry_run)
         else:
@@ -177,6 +182,7 @@ def update_component(
             else:
                 version_data["databases"][version_key] = meta
             _save_version(db_dir, version_data)
+            _save_db_config(db_dir, version_data)
             _remove_backup(backup)
 
         logger.info("  Component %s updated successfully.", component)
@@ -201,7 +207,7 @@ def build_parser() -> argparse.ArgumentParser:
     Returns:
         Configured ArgumentParser instance.
     """
-    updatable = ("protein", "nucleotide", "genomad", "taxonomy", "host")
+    updatable = ("protein", "nucleotide", "genomad", "taxonomy", "exclusion", "host")
     parser = argparse.ArgumentParser(
         prog="update_databases",
         description=(
@@ -217,6 +223,9 @@ def build_parser() -> argparse.ArgumentParser:
             "\n"
             "  # Update protein + nucleotide\n"
             "  python update_databases.py --db-dir /data/db --component protein,nucleotide\n"
+            "\n"
+            "  # Update exclusion DB only\n"
+            "  python update_databases.py --db-dir /data/db --component exclusion\n"
             "\n"
             "  # Dry-run check\n"
             "  python update_databases.py --db-dir /data/db --component all --dry-run\n"

@@ -53,7 +53,7 @@ Integrated classification table with:
 - **ictv_classification**: ICTV 2024 classification
 - **baltimore_group**: Baltimore classification (Group I-VII)
 - **count**: Number of reads
-- **rpm**: Reads Per Million
+- **rpm**: Coverage-normalized relative abundance
 - **coverage**: Genome coverage (0.0 for reads)
 
 **Data:** 5 example rows covering different virus families and detection methods

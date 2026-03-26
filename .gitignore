@@ -40,6 +40,18 @@ databases/
 # User config
 .deepinvirus/
 
+# Pipeline output directories
+*.deepinvirus_output/
+5.deepinvirus_output/
+7.deepinvirus_hybrid_v1/
+
+# Data directories (too large for git)
+host_genomes/
+input_data/
+
+# Nextflow binary
+nextflow
+
 # Temporary
 *.tmp
 *.bak

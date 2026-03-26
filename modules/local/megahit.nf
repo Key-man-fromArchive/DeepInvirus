@@ -1,3 +1,5 @@
+// @TASK T2.3 - MEGAHIT co-assembly
+// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
 // De novo assembly using MEGAHIT (per-sample, legacy)
 
 process MEGAHIT {

@@ -28,15 +28,17 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # @TASK T0.7 - Design-system colour palette (section 3.1)
+# @TASK C1   - Okabe-Ito colorblind-friendly palette
 # ---------------------------------------------------------------------------
 DEEPINVIRUS_PALETTE: list[str] = [
-    "#1F77B4",  # Deep Blue   - DNA virus / primary
-    "#FF7F0E",  # Orange      - RNA virus
-    "#2CA02C",  # Green       - dsDNA
-    "#D62728",  # Red         - ssRNA
-    "#9467BD",  # Purple      - ssDNA
-    "#8C564B",  # Brown       - dsRNA
-    "#7F7F7F",  # Gray        - Unclassified
+    "#0072B2",  # Blue
+    "#E69F00",  # Orange
+    "#009E73",  # Bluish Green
+    "#CC79A7",  # Reddish Purple
+    "#56B4E9",  # Sky Blue
+    "#D55E00",  # Vermillion
+    "#F0E442",  # Yellow
+    "#999999",  # Gray
 ]
 
 HEATMAP_CMAP = "YlOrRd"  # abundance heatmap (section 3.2)
@@ -139,6 +141,12 @@ def plot_heatmap(
         hm_df = hm_df.set_index("taxon")
     hm_df = hm_df.apply(pd.to_numeric, errors="coerce").fillna(0)
 
+    # Truncate long index labels to prevent y-axis text overlap
+    hm_df.index = [
+        str(x)[:25] + "..." if len(str(x)) > 25 else str(x)
+        for x in hm_df.index
+    ]
+
     # Log10 transform (add pseudocount)
     log_matrix = np.log10(hm_df.astype(float) + 1)
 
@@ -159,11 +167,22 @@ def plot_heatmap(
     }
     clustermap_kwargs.update(kwargs)
 
+    # Scale y-tick label fontsize based on row count
+    ytick_fontsize = max(6, min(10, 250 // max(n_rows, 1)))
+    xtick_fontsize = max(7, min(10, 150 // max(n_cols, 1)))
+
     try:
         g = sns.clustermap(log_matrix, **clustermap_kwargs)
         g.ax_heatmap.set_xlabel("Samples", fontsize=12)
         g.ax_heatmap.set_ylabel("Taxa", fontsize=12)
+        # Adjust tick label sizes to prevent overlap
+        g.ax_heatmap.tick_params(axis="y", labelsize=ytick_fontsize)
+        g.ax_heatmap.tick_params(axis="x", labelsize=xtick_fontsize)
         g.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
+        # @TASK C2 - SVG vector output for publication
+        svg_path = Path(output_path).with_suffix(".svg")
+        g.savefig(svg_path, bbox_inches="tight", format="svg")
+        logger.info("Heatmap SVG saved to %s", svg_path)
         plt.close(g.fig)
     except Exception:
         logger.warning("Clustermap failed, falling back to simple heatmap")
@@ -172,7 +191,14 @@ def plot_heatmap(
         ax.set_xlabel("Samples", fontsize=12)
         ax.set_ylabel("Taxa", fontsize=12)
         ax.set_title("Taxonomic Heatmap", fontsize=14, fontweight="bold")
+        ax.tick_params(axis="y", labelsize=ytick_fontsize)
+        ax.tick_params(axis="x", labelsize=xtick_fontsize)
+        plt.tight_layout()
         fig.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
+        # @TASK C2 - SVG vector output for publication
+        svg_path = Path(output_path).with_suffix(".svg")
+        fig.savefig(svg_path, bbox_inches="tight", format="svg")
+        logger.info("Heatmap fallback SVG saved to %s", svg_path)
         plt.close(fig)
         raise
 
@@ -240,22 +266,38 @@ def plot_barplot(
         :n_colours
     ]
 
-    fig, ax = plt.subplots(figsize=(8, 6))  # section 6.2: 8x6
+    n_samples_plot = len(plot_df)
+    n_taxa = len(plot_df.columns)
+    fig_width = max(8, n_samples_plot * 1.2 + 3)  # extra space for legend
+    fig, ax = plt.subplots(figsize=(fig_width, 6))  # section 6.2: dynamic width
     plot_df.plot.bar(stacked=True, color=palette, ax=ax, width=0.8)
 
     ax.set_ylabel("Relative Abundance")
     ax.set_xlabel("Sample")
     ax.set_title("Viral Community Composition")
+    # Truncate long taxon names in legend
+    handles, legend_labels = ax.get_legend_handles_labels()
+    legend_labels = [l[:20] + "..." if len(l) > 20 else l for l in legend_labels]
     ax.legend(
+        handles,
+        legend_labels,
         title="Taxon",
-        bbox_to_anchor=(1.02, 1),
+        bbox_to_anchor=(1.05, 1),
         loc="upper left",
-        fontsize=8,
+        fontsize=max(6, min(8, 150 // max(n_taxa, 1))),
         title_fontsize=9,
     )
     ax.set_ylim(0, 1)
+    # Rotate x-tick labels to prevent overlap
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right",
+                       fontsize=max(7, min(10, 120 // max(n_samples_plot, 1))))
 
+    plt.tight_layout()
     fig.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
+    # @TASK C2 - SVG vector output for publication
+    svg_path = Path(output_path).with_suffix(".svg")
+    fig.savefig(svg_path, bbox_inches="tight", format="svg")
+    logger.info("Barplot SVG saved to %s", svg_path)
     plt.close(fig)
 
     logger.info("Barplot saved to %s", output_path)
@@ -401,7 +443,12 @@ def plot_pcoa(
     ax.legend(title="Group")
     ax.set_aspect("equal", adjustable="datalim")
 
+    plt.tight_layout()
     fig.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
+    # @TASK C2 - SVG vector output for publication
+    svg_path = Path(output_path).with_suffix(".svg")
+    fig.savefig(svg_path, bbox_inches="tight", format="svg")
+    logger.info("PCoA SVG saved to %s", svg_path)
     plt.close(fig)
 
     logger.info("PCoA plot saved to %s", output_path)
@@ -460,8 +507,9 @@ def plot_alpha_diversity(
     has_groups = "group" in alpha_df.columns
 
     n_metrics = len(metric_cols)
+    fig_width = max(6, n_metrics * 4)  # scale width with number of metrics
     fig, axes = plt.subplots(
-        1, n_metrics, figsize=(6, 6), squeeze=False  # section 6.2: 6x6
+        1, n_metrics, figsize=(fig_width, 6), squeeze=False  # section 6.2: dynamic
     )
     axes = axes.flatten()
 
@@ -512,10 +560,20 @@ def plot_alpha_diversity(
 
         ax.set_title(metric_labels.get(metric, metric))
         ax.set_ylabel(metric_labels.get(metric, metric))
+        # Rotate x-tick labels (group names) to prevent overlap
+        if has_groups:
+            ax.set_xticklabels(
+                ax.get_xticklabels(), rotation=45, ha="right",
+                fontsize=max(7, min(10, 120 // max(len(alpha_df["group"].unique()), 1)))
+            )
 
     fig.suptitle("Alpha Diversity", fontsize=14, fontweight="bold", y=1.02)
     fig.tight_layout()
     fig.savefig(output_path, dpi=DEFAULT_DPI, bbox_inches="tight")
+    # @TASK C2 - SVG vector output for publication
+    svg_path = Path(output_path).with_suffix(".svg")
+    fig.savefig(svg_path, bbox_inches="tight", format="svg")
+    logger.info("Alpha diversity SVG saved to %s", svg_path)
     plt.close(fig)
 
     logger.info("Alpha diversity plot saved to %s", output_path)

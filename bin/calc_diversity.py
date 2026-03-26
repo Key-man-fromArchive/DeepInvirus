@@ -27,10 +27,13 @@ Outputs:
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 import pandas as pd
 from scipy.spatial.distance import braycurtis, squareform
 
@@ -132,6 +135,14 @@ def chao1_estimator(abundances: np.ndarray) -> float:
     For abundance data (non-integer), we treat observed species count
     as the base estimate. When f2=0, use Chao1 = S_obs + f1*(f1-1)/2.
 
+    .. warning::
+
+        Chao1 is designed for **integer count data** (raw read/contig counts).
+        When applied to normalised abundance values (RPM, RPKM, TPM) the
+        singleton/doubleton detection relies on rounding and the resulting
+        richness estimate is only approximate.  Prefer raw counts whenever
+        possible.
+
     Args:
         abundances: Array of abundance values.
 
@@ -188,9 +199,21 @@ def compute_alpha_diversity(matrix: pd.DataFrame, sample_cols: list[str]) -> pd.
     Returns:
         DataFrame with columns matching ALPHA_COLUMNS.
     """
+    _rpm_warned = False
     rows = []
     for sample in sample_cols:
         abundances = matrix[sample].values.astype(float)
+
+        # Detect non-integer abundance values (likely RPM/RPKM) and warn once
+        if not _rpm_warned:
+            positives = abundances[abundances > 0]
+            if len(positives) > 0 and any(not float(x).is_integer() for x in positives):
+                logger.warning(
+                    "Chao1 on non-integer data (likely RPM/RPKM). "
+                    "Richness estimates are approximate."
+                )
+                _rpm_warned = True
+
         obs = int(np.sum(abundances > 0))
         h = shannon_diversity(abundances)
         d = simpson_diversity(abundances)
@@ -300,6 +323,7 @@ def compute_pcoa(dist_matrix: pd.DataFrame, n_components: int = 2) -> pd.DataFra
 
 def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
     args = parse_args(argv)
 
     # Load matrix

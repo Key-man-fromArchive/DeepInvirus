@@ -1,11 +1,11 @@
-// @TASK T1.1 - QC + adapter trimming + deduplication (실제 구현)
+// @TASK T2.1 - Fastp quality trimming
 // @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
-// @SPEC docs/planning/02-trd.md#2.2-분석-도구
-// @TEST tests/modules/test_fastp.py
+// QC + adapter trimming + deduplication via fastp
 
 process FASTP {
     tag "$meta.id"
     label 'process_fastp'
+    publishDir "${params.outdir}/qc", mode: 'copy', pattern: "*.fastp.{json,html}"
 
     input:
     tuple val(meta), path(reads)

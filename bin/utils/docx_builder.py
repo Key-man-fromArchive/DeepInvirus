@@ -168,6 +168,58 @@ class ReportBuilder:
     # Public API
     # ------------------------------------------------------------------
 
+    def add_table_of_contents(self, title: str = "Table of Contents") -> None:
+        """Insert a Table of Contents field that Word will populate on open.
+
+        The TOC uses built-in Heading styles (Heading 1-3) and creates
+        clickable hyperlinks to each heading in the document.
+
+        Note:
+            The TOC field is rendered when the document is opened in Word
+            and the user presses F9 or selects 'Update Field'.  It will
+            show 'Right-click to update field' until then.
+        """
+        # Title for TOC page
+        heading = self._doc.add_heading(title, level=1)
+        for run in heading.runs:
+            self._set_run_font(run, size=_TITLE_SIZE, bold=True)
+
+        para = self._doc.add_paragraph()
+        run = para.add_run()
+
+        # Begin TOC field
+        fld_begin = run._r.makeelement(qn("w:fldChar"), {})
+        fld_begin.set(qn("w:fldCharType"), "begin")
+        run._r.append(fld_begin)
+
+        # TOC instruction: \o "1-3" = heading levels 1-3, \h = hyperlinks
+        run2 = para.add_run()
+        instr = run2._r.makeelement(qn("w:instrText"), {})
+        instr.set(qn("xml:space"), "preserve")
+        instr.text = r' TOC \o "1-3" \h \z \u '
+        run2._r.append(instr)
+
+        # Separate field code
+        run3 = para.add_run()
+        fld_sep = run3._r.makeelement(qn("w:fldChar"), {})
+        fld_sep.set(qn("w:fldCharType"), "separate")
+        run3._r.append(fld_sep)
+
+        # Placeholder text
+        run4 = para.add_run("Right-click and select 'Update Field' to generate table of contents")
+        self._set_run_font(run4, size=_BODY_SIZE, italic=True,
+                          color=RGBColor(0x7F, 0x7F, 0x7F))
+
+        # End TOC field
+        run5 = para.add_run()
+        fld_end = run5._r.makeelement(qn("w:fldChar"), {})
+        fld_end.set(qn("w:fldCharType"), "end")
+        run5._r.append(fld_end)
+
+        # Page break after TOC
+        self._doc.add_page_break()
+        logger.info("Added Table of Contents field")
+
     def add_heading(self, text: str, level: int = 1) -> None:
         """Add a heading to the report.
 

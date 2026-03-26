@@ -1,3 +1,5 @@
+// @TASK T2 - Assembly subworkflow
+// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
 // Assembly subworkflow: Co-assembly mode
 // Pools all samples' reads and runs a single assembly (MEGAHIT or metaSPAdes)
 

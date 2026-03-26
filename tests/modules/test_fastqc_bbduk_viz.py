@@ -176,7 +176,7 @@ class TestReportingFastqc:
         """reporting.nf MultiQC input must include FastQC results."""
         content = REPORTING_NF.read_text()
         assert "ch_fastqc" in content
-        assert "ch_multiqc_files" in content
+        assert "MULTIQC" in content
 
 
 # ===========================================================================

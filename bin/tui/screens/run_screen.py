@@ -223,6 +223,22 @@ class RunScreen(Screen):
                 )
                 yield Static("", id="ramdisk-info", classes="form-hint")
 
+                # ---- CheckV database (optional) -----------------------
+                yield Label("CheckV database (optional)", classes="form-label")
+                yield Input(
+                    placeholder="Path to CheckV DB (leave empty to skip)",
+                    id="input-checkv-db",
+                    classes="form-field",
+                )
+
+                # ---- Exclusion database (optional) --------------------
+                yield Label("Exclusion database (optional)", classes="form-label")
+                yield Input(
+                    placeholder="Path to SwissProt Diamond DB for non-viral exclusion",
+                    id="input-exclusion-db",
+                    classes="form-field",
+                )
+
                 # ---- Output directory ----------------------------------
                 yield Label("Output directory", classes="form-label")
                 yield Input(
@@ -349,7 +365,20 @@ class RunScreen(Screen):
         except Exception:
             pass
 
-        return {
+        # Optional database paths
+        checkv_db_val = ""
+        try:
+            checkv_db_val = self.query_one("#input-checkv-db", Input).value.strip()
+        except Exception:
+            pass
+
+        exclusion_db_val = ""
+        try:
+            exclusion_db_val = self.query_one("#input-exclusion-db", Input).value.strip()
+        except Exception:
+            pass
+
+        params = {
             "reads": reads_val,
             "host": host_val,
             "assembler": assembler_val,
@@ -359,6 +388,14 @@ class RunScreen(Screen):
             "threads": threads_val,
             "use_ramdisk": use_ramdisk,
         }
+
+        # Only include optional DB paths when provided
+        if checkv_db_val:
+            params["checkv_db"] = checkv_db_val
+        if exclusion_db_val:
+            params["exclusion_db"] = exclusion_db_val
+
+        return params
 
     def validate_params(self) -> list[str]:
         """Validate current form inputs.

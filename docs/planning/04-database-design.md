@@ -153,7 +153,7 @@ erDiagram
 | ictv_classification | string | ICTV 2024 분류 |
 | baltimore_group | string | Baltimore 분류 |
 | count | int | 리드 수 |
-| rpm | float | Reads Per Million |
+| rpm | float | Coverage-normalized relative abundance |
 | coverage | float | 게놈 커버리지 (contig) |
 
 ### 4.2 sample_taxon_matrix.tsv (샘플 x 종 매트릭스)

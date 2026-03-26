@@ -1,5 +1,6 @@
 <!doctype html>
 <!-- @TASK T5.1 - DeepInvirus interactive HTML dashboard template -->
+<!-- @TASK T5.2 - Taxonomy tab (Sankey/Sunburst/Treemap) + Search v2 (per-sample coverage columns) -->
 <!-- @SPEC docs/planning/05-design-system.md#2-대시보드-설계 -->
 <!-- @SPEC docs/planning/05-design-system.md#3-컬러-팔레트 -->
 <!-- Standalone Jinja2 template: rendered by bin/generate_dashboard.py -->
@@ -265,6 +266,239 @@
       border-top: 1px solid var(--color-border);
       margin-top: 40px;
     }
+
+    /* ---- Taxonomy tab controls ----------------------------------------- */
+    /* @TASK T5.2 - Taxonomy controls: viz toggle + sample select + family filter */
+    .taxonomy-controls {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      padding: 12px 0 16px;
+      flex-wrap: wrap;
+    }
+    .taxonomy-controls label {
+      font-size: 12px;
+      color: var(--color-neutral);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .taxonomy-controls .ctrl-group {
+      display: flex;
+      flex-direction: column;
+    }
+    .viz-toggle {
+      display: flex;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .viz-btn {
+      padding: 6px 16px;
+      border: none;
+      background: var(--color-surface);
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.2s, color 0.2s;
+      color: var(--color-text);
+    }
+    .viz-btn.active {
+      background: var(--color-tab-active);
+      color: #fff;
+    }
+    .viz-btn:hover:not(.active) {
+      background: var(--color-border);
+    }
+    .taxonomy-controls select {
+      padding: 6px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: var(--font-main);
+      background: #fff;
+    }
+    select[multiple] {
+      min-width: 200px;
+      padding: 4px;
+    }
+    .chart-export-row {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-bottom: 8px;
+    }
+    .btn-export {
+      padding: 5px 12px;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      background: var(--color-surface);
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--color-text);
+      transition: background 0.15s;
+    }
+    .btn-export:hover { background: #e9ecef; }
+    .btn-link {
+      border: none;
+      background: transparent;
+      color: var(--color-primary-1);
+      cursor: pointer;
+      padding: 0;
+      font: inherit;
+      text-decoration: underline;
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(33, 37, 41, 0.65);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 24px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-dialog {
+      width: min(760px, 100%);
+      max-height: 85vh;
+      overflow: auto;
+      background: #fff;
+      border-radius: 10px;
+      border: 1px solid var(--color-border);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+      padding: 18px 20px;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    .modal-title {
+      font-size: 16px;
+      font-weight: 600;
+      word-break: break-word;
+    }
+    .modal-close {
+      border: 1px solid var(--color-border);
+      background: #fff;
+      border-radius: 4px;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+    .modal-body {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--color-text);
+    }
+
+    /* ---- Confidence / detection badges --------------------------------- */
+    /* @TASK T5.2 - Confidence tier badges for Search v2 */
+    .badge-high   { background: #d4edda; color: #155724; }
+    .badge-medium { background: #fff3cd; color: #856404; }
+    .badge-low    { background: #f8d7da; color: #721c24; }
+
+    /* Search v2: wider filter bar */
+    .search-bar select[multiple] {
+      min-width: 160px;
+      max-height: 80px;
+    }
+    .comparison-controls {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .comparison-controls select,
+    .comparison-controls input[type="text"] {
+      padding: 8px 12px;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      font-size: 14px;
+      background: #fff;
+    }
+    .comparison-controls input[type="text"] {
+      min-width: 240px;
+      flex: 1;
+    }
+    .comparison-meta {
+      margin: 10px 0 16px;
+      color: var(--color-neutral);
+      font-size: 12px;
+    }
+    .family-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-main);
+    }
+    .family-chip::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--chip-color, #cccccc);
+      border: 1px solid rgba(0, 0, 0, 0.15);
+      flex: 0 0 auto;
+    }
+    .modal-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+      font-family: var(--font-main);
+    }
+    .modal-stat {
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      background: var(--color-surface);
+      padding: 10px 12px;
+    }
+    .modal-stat-label {
+      font-size: 11px;
+      color: var(--color-neutral);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 4px;
+    }
+    .modal-stat-value {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-text);
+      word-break: break-word;
+    }
+    .modal-section-title {
+      font-family: var(--font-main);
+      font-size: 13px;
+      font-weight: 600;
+      margin: 14px 0 8px;
+    }
+    .sequence-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-family: var(--font-main);
+      font-size: 12px;
+      color: var(--color-neutral);
+    }
+    .sequence-box {
+      max-height: 320px;
+      overflow: auto;
+      padding: 12px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      background: #fbfbfc;
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.45;
+    }
   </style>
 </head>
 
@@ -294,13 +528,17 @@
   <button class="tab-btn active" role="tab" aria-selected="true"
           aria-controls="tab-overview"   onclick="switchTab('tab-overview', this)">Overview</button>
   <button class="tab-btn" role="tab" aria-selected="false"
-          aria-controls="tab-composition" onclick="switchTab('tab-composition', this)">Composition</button>
+          aria-controls="tab-taxonomy" onclick="switchTab('tab-taxonomy', this)">Taxonomy</button>
   <button class="tab-btn" role="tab" aria-selected="false"
           aria-controls="tab-coverage"   onclick="switchTab('tab-coverage', this)">Coverage</button>
   <button class="tab-btn" role="tab" aria-selected="false"
           aria-controls="tab-diversity"  onclick="switchTab('tab-diversity', this)">Diversity</button>
   <button class="tab-btn" role="tab" aria-selected="false"
+          aria-controls="tab-comparison"  onclick="switchTab('tab-comparison', this)">Comparison</button>
+  <button class="tab-btn" role="tab" aria-selected="false"
           aria-controls="tab-search"     onclick="switchTab('tab-search', this)">Search</button>
+  <button class="tab-btn" role="tab" aria-selected="false"
+          aria-controls="tab-results"    onclick="switchTab('tab-results', this)">Results</button>
 </nav>
 
 <!-- ====================================================================== -->
@@ -328,7 +566,7 @@
       <div class="card">
         <div class="card-label">Total Sequences</div>
         <div class="card-value" id="stat-seqs">{{ summary.n_sequences }}</div>
-        <div class="card-sub">reads + contigs</div>
+        <div class="card-sub">unique viral contigs</div>
       </div>
       <div class="card">
         <div class="card-label">Top Virus</div>
@@ -346,25 +584,55 @@
     <h2 class="section-title">Taxonomic Hierarchy (Sankey)</h2>
     <div class="plot-card">
       <h3>Domain → Family → Genus</h3>
+      <div class="chart-export-row" data-plot-target="sankey-plot"></div>
       <div id="sankey-plot" class="plotly-div" style="min-height:500px"></div>
     </div>
 
   </section>
 
   <!-- -------------------------------------------------------------------- -->
-  <!-- TAB: Composition                                                       -->
+  <!-- TAB: Taxonomy (replaces Composition)                                  -->
+  <!-- @TASK T5.2 - Taxonomy tab: Sankey / Sunburst / Treemap with per-sample -->
   <!-- -------------------------------------------------------------------- -->
-  <section id="tab-composition" class="tab-panel" role="tabpanel">
+  <section id="tab-taxonomy" class="tab-panel" role="tabpanel">
 
-    <div class="plot-row">
-      <div class="plot-card">
-        <h3>Taxonomic Heatmap (Sample × Taxon) – log10(RPM + 1)</h3>
-        <div id="heatmap-plot" class="plotly-div"></div>
+    <!-- Controls -->
+    <div class="taxonomy-controls">
+      <div class="ctrl-group">
+        <label>Visualization</label>
+        <div class="viz-toggle" role="group" aria-label="Visualization mode">
+          <button class="viz-btn active" data-viz="sankey"   aria-pressed="true">Sankey</button>
+          <button class="viz-btn"        data-viz="sunburst" aria-pressed="false">Sunburst</button>
+          <button class="viz-btn"        data-viz="treemap"  aria-pressed="false">Treemap</button>
+        </div>
       </div>
-      <div class="plot-card">
-        <h3>Relative Abundance (Stacked Barplot)</h3>
-        <div id="barplot-plot" class="plotly-div"></div>
+
+      <div class="ctrl-group">
+        <label for="sample-select">Sample</label>
+        <select id="sample-select" aria-label="Select sample">
+          <option value="all">All Samples</option>
+          {% for sample in data.samples %}
+          <option value="{{ sample }}">{{ sample }}</option>
+          {% endfor %}
+        </select>
       </div>
+
+      <div class="ctrl-group">
+        <label for="family-filter">Family (multi-select)</label>
+        <select id="family-filter" multiple size="4" aria-label="Filter by family">
+          {% for family in data.filter_options.families %}
+          <option value="{{ family }}">{{ family }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <!-- Export buttons -->
+    <div class="chart-export-row" data-plot-target="taxonomy-chart"></div>
+
+    <!-- Chart area -->
+    <div class="plot-card" style="padding:12px;">
+      <div id="taxonomy-chart" style="width:100%;height:700px;"></div>
     </div>
 
   </section>
@@ -382,6 +650,7 @@
     <div class="plot-row single">
       <div class="plot-card">
         <h3>Coverage Heatmap (Contig x Sample) - log10(mean coverage + 1)</h3>
+        <div class="chart-export-row" data-plot-target="coverage-heatmap-plot"></div>
         <div id="coverage-heatmap-plot" class="plotly-div" style="min-height:600px"></div>
       </div>
     </div>
@@ -390,6 +659,7 @@
     <div class="plot-row single">
       <div class="plot-card">
         <h3>Host Mapping Rate Comparison</h3>
+        <div class="chart-export-row" data-plot-target="host-removal-plot"></div>
         <div id="host-removal-plot" class="plotly-div" style="min-height:400px"></div>
       </div>
     </div>
@@ -412,54 +682,86 @@
     <div class="plot-row">
       <div class="plot-card">
         <h3>Beta Diversity – PCoA (Bray-Curtis)</h3>
+        <div class="chart-export-row" data-plot-target="pcoa-plot"></div>
         <div id="pcoa-plot" class="plotly-div"></div>
       </div>
       <div class="plot-card">
         <h3>Alpha Diversity (Shannon, Simpson, Observed Species)</h3>
+        <div class="chart-export-row" data-plot-target="alpha-plot"></div>
         <div id="alpha-plot" class="plotly-div"></div>
       </div>
     </div>
 
   </section>
 
+  <section id="tab-comparison" class="tab-panel" role="tabpanel">
+    <h2 class="section-title">Sample Comparison</h2>
+    <p class="section-desc" style="margin-bottom:16px;color:var(--color-neutral);font-size:13px;">
+      Compare viral abundance (RPM) across samples. Select a taxonomic level to aggregate.
+    </p>
+
+    <div class="comparison-controls">
+      <select id="comparison-level" aria-label="Comparison level">
+        <option value="family">By Family</option>
+        <option value="contig">By Contig</option>
+      </select>
+      <input type="text" id="comparison-search" placeholder="Filter by name..." aria-label="Filter comparison rows">
+    </div>
+
+    <div id="comparison-meta" class="comparison-meta"></div>
+
+    <div id="comparison-table-container" class="table-wrapper">
+      <table class="data-table" id="comparison-table" aria-label="Sample comparison table">
+        <thead id="comparison-thead"></thead>
+        <tbody id="comparison-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="plot-card" style="margin-top:20px;">
+      <div class="chart-export-row" data-plot-target="comparison-chart"></div>
+      <div id="comparison-chart" style="width:100%;height:500px;"></div>
+    </div>
+  </section>
+
   <!-- -------------------------------------------------------------------- -->
-  <!-- TAB: Search                                                            -->
+  <!-- TAB: Search v2 (per-sample coverage columns)                          -->
+  <!-- @TASK T5.2 - Search v2: search_rows_v2 + per-sample coverage columns  -->
   <!-- -------------------------------------------------------------------- -->
   <section id="tab-search" class="tab-panel" role="tabpanel">
 
     <div class="search-bar">
-      <input type="text" id="search-input" placeholder="Search by taxon name, family, genus..."
-             oninput="filterTable()" aria-label="Search taxa" />
-      <select id="rank-filter" onchange="filterTable()" aria-label="Filter by rank">
-        <option value="">All ranks</option>
-        <option value="family">Family</option>
-        <option value="genus">Genus</option>
-        <option value="species">Species</option>
+      <input type="text" id="search-input" placeholder="Search by contig, family, genus, species, best hit..."
+             oninput="filterSearchV2()" aria-label="Search contigs" />
+
+      <select id="family-filter-search" onchange="filterSearchV2()" aria-label="Filter by family">
+        <option value="">All families</option>
+        {% for family in data.filter_options.families %}
+        <option value="{{ family | lower }}">{{ family }}</option>
+        {% endfor %}
       </select>
-      <select id="method-filter" onchange="filterTable()" aria-label="Filter by detection method">
+
+      <select id="confidence-filter" onchange="filterSearchV2()" aria-label="Filter by confidence tier">
+        <option value="">All confidence</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+
+      <select id="method-filter" onchange="filterSearchV2()" aria-label="Filter by detection method">
         <option value="">All methods</option>
-        <option value="genomad">geNomad</option>
-        <option value="diamond">Diamond</option>
-        <option value="both">Both</option>
+        {% for m in data.filter_options.detection_methods %}
+        <option value="{{ m | lower }}">{{ m }}</option>
+        {% endfor %}
       </select>
-      <button onclick="clearFilters()">Clear</button>
+
+      <button onclick="clearSearchFilters()">Clear</button>
     </div>
 
     <div class="table-wrapper">
-      <table class="data-table" id="search-table" aria-label="Viral taxa search results">
-        <thead>
-          <tr>
-            <th onclick="sortTable(0)">Taxon</th>
-            <th onclick="sortTable(1)">Rank</th>
-            <th onclick="sortTable(2)">Family</th>
-            <th onclick="sortTable(3)">Sample</th>
-            <th onclick="sortTable(4)">RPM</th>
-            <th onclick="sortTable(5)">Detection</th>
-            <th onclick="sortTable(6)">Baltimore Group</th>
-          </tr>
-        </thead>
+      <table class="data-table" id="search-table" aria-label="Viral contig search results">
+        <thead id="search-thead"></thead>
         <tbody id="search-tbody">
-          <!-- Populated by JS from window.__DASHBOARD_DATA__ -->
+          <!-- Populated by renderSearchTableV2() -->
         </tbody>
       </table>
     </div>
@@ -467,7 +769,45 @@
 
   </section>
 
+  <!-- ====================================================================== -->
+  <!-- TAB: Results (inline figures from report generation)                    -->
+  <!-- ====================================================================== -->
+  <section id="tab-results" class="tab-panel" role="tabpanel">
+
+    <h2 class="section-title">Analysis Result Figures</h2>
+    <p class="section-desc">Publication-quality figures generated during report creation. Click to enlarge.</p>
+
+    {% if data.inline_figures %}
+    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap:20px; margin-top:20px;">
+      {% for fig in data.inline_figures %}
+      <div class="card" style="padding:10px; text-align:center;">
+        <h3 style="font-size:13px; margin-bottom:8px; color:var(--color-text);">{{ fig.label }}</h3>
+        <img src="{{ fig.data_uri }}" alt="{{ fig.label }}"
+             style="max-width:100%; height:auto; border:1px solid var(--color-border); border-radius:4px; cursor:pointer;"
+             onclick="window.open(this.src, '_blank')" />
+        <p style="font-size:11px; color:var(--color-neutral); margin-top:4px;">{{ fig.name }}</p>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card" style="padding:40px; text-align:center; color:var(--color-neutral);">
+      <p>No result figures available. Figures are generated during report creation.</p>
+    </div>
+    {% endif %}
+
+  </section>
+
 </main>
+
+<div id="contig-modal" class="modal-backdrop" aria-hidden="true">
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="contig-modal-title">
+    <div class="modal-header">
+      <div id="contig-modal-title" class="modal-title">Contig details</div>
+      <button class="modal-close" type="button" onclick="closeContigModal()">Close</button>
+    </div>
+    <div id="contig-modal-body" class="modal-body"></div>
+  </div>
+</div>
 
 <footer class="footer">
   Generated by DeepInvirus &mdash; {{ generated_at }} &mdash; Plotly.js {{ plotly_version }}
@@ -515,18 +855,23 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     }
 
     // Lazy render Plotly charts only when their tab is first activated
+    // @TASK T5.2 - switchTab updated: tab-taxonomy and Search v2
     if (!_chartsRendered[panelId]) {
       _chartsRendered[panelId] = true;
-      if (panelId === "tab-overview")     { renderSankey(); }
-      if (panelId === "tab-composition")  { renderHeatmap(); renderBarplot(); }
-      if (panelId === "tab-coverage")     { renderCoverageHeatmap(); }
-      if (panelId === "tab-diversity")    { renderPCoA(); renderAlpha(); }
-      if (panelId === "tab-search")       { renderSearchTable(); }
+      if (panelId === "tab-overview")  { renderSankey(); }
+      if (panelId === "tab-taxonomy")  { renderTaxonomy(); }
+      if (panelId === "tab-coverage")  { renderCoverageHeatmap(); }
+      if (panelId === "tab-diversity") { renderPCoA(); renderAlpha(); }
+      if (panelId === "tab-comparison") { renderComparisonView(); }
+      if (panelId === "tab-search")    { renderSearchTableV2(); }
     }
 
-    // Trigger Plotly resize after tab switch
+    // Trigger Plotly resize after tab switch for chart divs only.
     setTimeout(function () {
-      Plotly.Plots.resize(document.getElementById(panelId));
+      if (typeof Plotly === "undefined" || !panel) return;
+      panel.querySelectorAll(".js-plotly-plot").forEach(function (plot) {
+        Plotly.Plots.resize(plot);
+      });
     }, 50);
   }
   window.switchTab = switchTab;
@@ -538,6 +883,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728",
     "#9467BD", "#8C564B", "#7F7F7F"
   ];
+  var ICTV_COLORS = D.ictv_family_colors || {};
 
   function baseLayout(title) {
     return {
@@ -550,6 +896,31 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   }
 
   var PLOTLY_CONFIG = { responsive: true, displayModeBar: true };
+  var EXPORT_CONFIG = {
+    svg: { format: "svg", width: 1200, height: 800, filename: "deepinvirus-plot" },
+    png: { format: "png", width: 2400, height: 1600, scale: 1, filename: "deepinvirus-plot" }
+  };
+
+  function installExportToolbars() {
+    document.querySelectorAll(".chart-export-row[data-plot-target]").forEach(function (row) {
+      var target = row.getAttribute("data-plot-target");
+      row.innerHTML =
+        "<button class='btn-export' type='button' data-export='svg' data-target='" + _esc(target) + "'>Export SVG</button>" +
+        "<button class='btn-export' type='button' data-export='png' data-target='" + _esc(target) + "'>Export PNG</button>";
+    });
+  }
+
+  document.addEventListener("click", function (event) {
+    var exportBtn = event.target.closest(".btn-export[data-target]");
+    if (!exportBtn) return;
+    var targetId = exportBtn.getAttribute("data-target");
+    var format = exportBtn.getAttribute("data-export");
+    var chart = document.getElementById(targetId);
+    if (typeof Plotly === "undefined" || !chart || !chart.data) return;
+    var options = Object.assign({}, EXPORT_CONFIG[format] || EXPORT_CONFIG.png);
+    options.filename = targetId;
+    Plotly.downloadImage(chart, options);
+  });
 
   /* ---------------------------------------------------------------------- */
   /* Overview: Sankey diagram                                                 */
@@ -576,7 +947,12 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         source: sd.sources,
         target: sd.targets,
         value: sd.values,
-        color: "rgba(31,119,180,0.2)"
+        color: (sd.targets || []).map(function (targetIdx) {
+          var hex = ((sd.node_colors || [])[targetIdx]) || "#CCCCCC";
+          var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+          if (!m) return "rgba(180,180,180,0.22)";
+          return "rgba(" + parseInt(m[1], 16) + "," + parseInt(m[2], 16) + "," + parseInt(m[3], 16) + ",0.25)";
+        })
       }
     };
 
@@ -588,63 +964,154 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   }
 
   /* ---------------------------------------------------------------------- */
-  /* Composition: Heatmap                                                     */
+  /* Taxonomy tab: Sankey / Sunburst / Treemap                               */
+  /* @TASK T5.2 - Taxonomy tab interactive renderer                          */
   /* ---------------------------------------------------------------------- */
-  function renderHeatmap() {
-    var hd = D.heatmap;
-    if (!hd || !hd.z || hd.z.length === 0) {
-      document.getElementById("heatmap-plot").innerHTML =
-        "<p style='padding:20px;color:#7f7f7f'>No data available for heatmap.</p>";
+  var _currentViz = "sankey";
+  var _currentSample = "all";
+
+  function renderTaxonomy() {
+    if (typeof Plotly === "undefined") {
+      document.getElementById("taxonomy-chart").innerHTML =
+        "<p style='padding:20px;color:#856404;background:#FFF3CD;border-radius:4px;'>Interactive chart unavailable (offline).</p>";
       return;
     }
 
-    var trace = {
-      type: "heatmap",
-      z: hd.z,
-      x: hd.samples,
-      y: hd.taxa,
-      colorscale: "YlOrRd",
-      colorbar: { title: { text: "log10(RPM+1)", side: "right" } },
-      hovertemplate: "Sample: %{x}<br>Taxon: %{y}<br>log10(RPM+1): %{z:.2f}<extra></extra>"
-    };
+    var chartDiv = document.getElementById("taxonomy-chart");
+    var sankeyData, treeData;
 
-    var layout = Object.assign(baseLayout("Taxonomic Heatmap"), {
-      xaxis: { title: "Sample", tickangle: -30 },
-      yaxis: { title: "Taxon", automargin: true }
-    });
+    if (_currentSample === "all") {
+      sankeyData = D.sankey_all || D.sankey;
+      treeData   = (D.taxonomy_tree || {}).all || {};
+    } else {
+      sankeyData = ((D.sankey_per_sample || {})[_currentSample]) || D.sankey_all || D.sankey;
+      treeData   = (((D.taxonomy_tree || {}).per_sample || {})[_currentSample]) ||
+                   (D.taxonomy_tree || {}).all || {};
+    }
 
-    Plotly.newPlot("heatmap-plot", [trace], layout, PLOTLY_CONFIG);
+    var sampleLabel = _currentSample === "all" ? "All Samples" : _currentSample;
+
+    if (_currentViz === "sankey") {
+      if (!sankeyData || !sankeyData.nodes || sankeyData.nodes.length === 0) {
+        chartDiv.innerHTML = "<p style='padding:20px;color:#7f7f7f'>No Sankey data available.</p>";
+        return;
+      }
+      Plotly.react(chartDiv, [{
+        type: "sankey",
+        orientation: "h",
+        node: {
+          label: sankeyData.nodes,
+          color: sankeyData.node_colors || PALETTE,
+          pad: 15,
+          thickness: 20,
+          line: { color: "white", width: 0.5 }
+        },
+        link: {
+          source: sankeyData.sources,
+          target: sankeyData.targets,
+          value:  sankeyData.values,
+          color:  (sankeyData.targets || []).map(function (targetIdx) {
+            var hex = ((sankeyData.node_colors || [])[targetIdx]) || "#CCCCCC";
+            var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            if (!m) return "rgba(180,180,180,0.22)";
+            return "rgba(" + parseInt(m[1], 16) + "," + parseInt(m[2], 16) + "," + parseInt(m[3], 16) + ",0.25)";
+          })
+        }
+      }], Object.assign(baseLayout("Taxonomic Hierarchy — " + sampleLabel), {
+        margin: { t: 50, r: 20, b: 20, l: 20 }
+      }), PLOTLY_CONFIG);
+
+    } else if (_currentViz === "sunburst") {
+      if (!treeData || !treeData.ids || treeData.ids.length === 0) {
+        chartDiv.innerHTML = "<p style='padding:20px;color:#7f7f7f'>No sunburst data available.</p>";
+        return;
+      }
+      Plotly.react(chartDiv, [{
+        type: "sunburst",
+        ids:          treeData.ids,
+        labels:       treeData.labels,
+        parents:      treeData.parents,
+        values:       treeData.values,
+        customdata:   treeData.ids,
+        branchvalues: "total",
+        textinfo:     "label+percent entry",
+        hovertemplate: "<b>%{label}</b><br>Path: %{customdata}<br>RPM: %{value:.1f}<br>%{percentEntry:.1%}<extra></extra>",
+        insidetextorientation: "radial",
+        maxdepth: 2,
+        textfont: { size: 14 },
+        marker: { colors: treeData.colors || [] }
+      }], Object.assign(baseLayout("Taxonomy Sunburst — " + sampleLabel), {
+        margin: { l: 0, r: 0, t: 50, b: 0 },
+        height: 700
+      }), PLOTLY_CONFIG);
+
+    } else if (_currentViz === "treemap") {
+      if (!treeData || !treeData.ids || treeData.ids.length === 0) {
+        chartDiv.innerHTML = "<p style='padding:20px;color:#7f7f7f'>No treemap data available.</p>";
+        return;
+      }
+      Plotly.react(chartDiv, [{
+        type: "treemap",
+        ids:          treeData.ids,
+        labels:       treeData.labels,
+        parents:      treeData.parents,
+        values:       treeData.values,
+        branchvalues: "total",
+        textinfo:     "label+value+percent entry",
+        hovertemplate: "<b>%{label}</b><br>RPM: %{value:.1f}<br>%{percentEntry:.1%}<extra></extra>",
+        marker: { colors: treeData.colors || [] }
+      }], Object.assign(baseLayout("Taxonomy Treemap — " + sampleLabel), {
+        margin: { l: 10, r: 10, t: 50, b: 10 }
+      }), PLOTLY_CONFIG);
+    }
   }
 
-  /* ---------------------------------------------------------------------- */
-  /* Composition: Stacked barplot                                             */
-  /* ---------------------------------------------------------------------- */
-  function renderBarplot() {
-    var bd = D.barplot;
-    if (!bd || !bd.samples || bd.samples.length === 0) {
-      document.getElementById("barplot-plot").innerHTML =
-        "<p style='padding:20px;color:#7f7f7f'>No data available for barplot.</p>";
-      return;
-    }
-
-    var traces = bd.taxa.map(function (taxon, i) {
-      return {
-        type: "bar",
-        name: taxon,
-        x: bd.samples,
-        y: bd.values[i],
-        marker: { color: PALETTE[i % PALETTE.length] }
-      };
+  // Viz toggle buttons
+  document.querySelectorAll(".viz-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".viz-btn").forEach(function (b) {
+        b.classList.remove("active");
+        b.setAttribute("aria-pressed", "false");
+      });
+      btn.classList.add("active");
+      btn.setAttribute("aria-pressed", "true");
+      _currentViz = btn.dataset.viz;
+      renderTaxonomy();
     });
+  });
 
-    var layout = Object.assign(baseLayout("Relative Abundance"), {
-      barmode: "stack",
-      xaxis: { title: "Sample", tickangle: -30 },
-      yaxis: { title: "Relative Abundance", tickformat: ".0%", range: [0, 1] },
-      legend: { orientation: "v", x: 1.02, y: 1 }
+  // Sample selector
+  var sampleSelectEl = document.getElementById("sample-select");
+  if (sampleSelectEl) {
+    sampleSelectEl.addEventListener("change", function () {
+      _currentSample = this.value;
+      renderTaxonomy();
     });
+  }
 
-    Plotly.newPlot("barplot-plot", traces, layout, PLOTLY_CONFIG);
+  // Family multi-select (taxonomy tab) — re-render on change
+  var familyFilterEl = document.getElementById("family-filter");
+  if (familyFilterEl) {
+    familyFilterEl.addEventListener("change", function () {
+      // Family filter is informational for future server-side use;
+      // client-side: simply re-render to reflect selection intent.
+      renderTaxonomy();
+    });
+  }
+
+  var comparisonLevelEl = document.getElementById("comparison-level");
+  if (comparisonLevelEl) {
+    comparisonLevelEl.addEventListener("change", function () {
+      _comparisonSort = { key: "total_rpm", asc: false };
+      renderComparisonView();
+    });
+  }
+
+  var comparisonSearchEl = document.getElementById("comparison-search");
+  if (comparisonSearchEl) {
+    comparisonSearchEl.addEventListener("input", function () {
+      renderComparisonView();
+    });
   }
 
   /* ---------------------------------------------------------------------- */
@@ -726,82 +1193,324 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   }
 
   /* ---------------------------------------------------------------------- */
-  /* Search: table render + filter                                            */
+  /* Comparison tab                                                          */
   /* ---------------------------------------------------------------------- */
-  var _tableRows = [];
+  var _comparisonSort = { key: "total_rpm", asc: false };
 
-  function renderSearchTable() {
-    var rows = D.search_rows || [];
-    _tableRows = rows;
-    buildTableDOM(rows);
+  function comparisonDataset() {
+    var levelEl = document.getElementById("comparison-level");
+    var level = levelEl ? levelEl.value : "family";
+    return (D.comparison && D.comparison[level]) || [];
   }
 
-  function buildTableDOM(rows) {
-    var tbody = document.getElementById("search-tbody");
-    var counter = document.getElementById("search-count");
-    if (!tbody) return;
+  function comparisonSamples() {
+    return (D.comparison && D.comparison.samples) || D.samples || [];
+  }
 
-    tbody.innerHTML = "";
-    rows.forEach(function (row) {
-      var tr = document.createElement("tr");
-      tr.innerHTML = [
-        "<td>" + _esc(row.taxon) + "</td>",
-        "<td>" + _esc(row.rank) + "</td>",
-        "<td>" + _esc(row.family) + "</td>",
-        "<td>" + _esc(row.sample) + "</td>",
-        "<td>" + (row.rpm != null ? row.rpm.toFixed(1) : "0.0") + "</td>",
-        "<td><span class='badge " + _methodBadge(row.detection_method) + "'>" + _esc(row.detection_method) + "</span></td>",
-        "<td>" + _esc(row.baltimore_group) + "</td>"
-      ].join("");
-      tbody.appendChild(tr);
+  function totalComparisonRpm(row, samples) {
+    return samples.reduce(function (sum, sample) {
+      return sum + Number(row[sample + "_rpm"] || 0);
+    }, 0);
+  }
+
+  function filteredComparisonRows() {
+    var rows = comparisonDataset();
+    var samples = comparisonSamples();
+    var query = ((document.getElementById("comparison-search") || {}).value || "").toLowerCase();
+    var filtered = rows.filter(function (row) {
+      if (!query) return true;
+      return String(row.name || "").toLowerCase().includes(query) ||
+             String(row.family || "").toLowerCase().includes(query);
     });
-    if (counter) counter.textContent = rows.length + " record(s) shown";
+    return filtered.sort(function (a, b) {
+      var key = _comparisonSort.key;
+      var va = key === "total_rpm" ? totalComparisonRpm(a, samples) : a[key];
+      var vb = key === "total_rpm" ? totalComparisonRpm(b, samples) : b[key];
+      va = va == null ? (_comparisonSort.asc ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY) : va;
+      vb = vb == null ? (_comparisonSort.asc ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY) : vb;
+      if (typeof va === "number" && typeof vb === "number") {
+        return _comparisonSort.asc ? va - vb : vb - va;
+      }
+      return _comparisonSort.asc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+    });
   }
 
-  function _esc(v) { return v != null ? String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;") : ""; }
+  function renderComparisonTable(rows, samples) {
+    var levelEl = document.getElementById("comparison-level");
+    var level = levelEl ? levelEl.value : "family";
+    var thead = document.getElementById("comparison-thead");
+    var tbody = document.getElementById("comparison-tbody");
+    var meta = document.getElementById("comparison-meta");
+    if (!thead || !tbody) return;
+
+    var header = "<tr>";
+    header += "<th onclick=\"sortComparisonTable('name')\">Name</th>";
+    samples.forEach(function (sample) {
+      header += "<th onclick=\"sortComparisonTable('" + _esc(sample + "_rpm") + "')\">" + _esc(sample) + " RPM</th>";
+    });
+    if (samples.length === 2) {
+      header += "<th onclick=\"sortComparisonTable('log2fc')\">log2(FC)</th>";
+    }
+    header += "<th onclick=\"sortComparisonTable('" + (level === "family" ? "count" : "length") + "')\">" + (level === "family" ? "Count" : "Length") + "</th>";
+    header += "</tr>";
+    thead.innerHTML = header;
+
+    var html = "";
+    rows.forEach(function (row) {
+      var color = row.color || getFamilyColor(row.family);
+      html += "<tr>";
+      html += "<td><span class='family-chip' style='--chip-color:" + _esc(color) + "'>" + _esc(row.name) + "</span></td>";
+      samples.forEach(function (sample) {
+        html += "<td>" + Number(row[sample + "_rpm"] || 0).toFixed(2) + "</td>";
+      });
+      if (samples.length === 2) {
+        html += "<td>" + (row.log2fc == null ? "" : Number(row.log2fc).toFixed(2)) + "</td>";
+      }
+      html += "<td>" + (level === "family" ? Number(row.count || 0) : Number(row.length || 0)) + "</td>";
+      html += "</tr>";
+    });
+    tbody.innerHTML = html;
+
+    if (meta) {
+      meta.textContent = rows.length + " row(s) shown; chart displays top 20 by total RPM.";
+    }
+  }
+
+  function renderComparisonChart(rows, samples) {
+    var chartDiv = document.getElementById("comparison-chart");
+    if (!chartDiv) return;
+    if (typeof Plotly === "undefined") {
+      chartDiv.innerHTML = "<p style='padding:20px;color:#856404;background:#FFF3CD;border-radius:4px;'>Interactive chart unavailable (offline).</p>";
+      return;
+    }
+    if (!rows.length || !samples.length) {
+      chartDiv.innerHTML = "<p style='padding:20px;color:#7f7f7f'>No comparison data available.</p>";
+      return;
+    }
+
+    var topRows = rows.slice(0, 20);
+    var x = topRows.map(function (row) { return row.name; });
+    var traces = samples.map(function (sample) {
+      return {
+        type: "bar",
+        name: sample,
+        x: x,
+        y: topRows.map(function (row) { return Number(row[sample + "_rpm"] || 0); }),
+        marker: {
+          color: topRows.map(function (row) { return row.color || getFamilyColor(row.family); })
+        },
+        hovertemplate: "%{x}<br>" + _esc(sample) + " RPM: %{y:.2f}<extra></extra>"
+      };
+    });
+
+    Plotly.newPlot("comparison-chart", traces, Object.assign(baseLayout("Sample Comparison"), {
+      barmode: "group",
+      xaxis: { title: "Taxon / Contig", tickangle: -30, automargin: true },
+      yaxis: { title: "RPM" },
+      legend: { orientation: "h", y: -0.18 }
+    }), PLOTLY_CONFIG);
+  }
+
+  function renderComparisonView() {
+    var samples = comparisonSamples();
+    var rows = filteredComparisonRows();
+    renderComparisonTable(rows, samples);
+    renderComparisonChart(rows, samples);
+  }
+
+  window.sortComparisonTable = function (key) {
+    if (_comparisonSort.key === key) {
+      _comparisonSort.asc = !_comparisonSort.asc;
+    } else {
+      _comparisonSort.key = key;
+      _comparisonSort.asc = false;
+    }
+    renderComparisonView();
+  };
+
+  /* ---------------------------------------------------------------------- */
+  /* Search v2: table render + filter (search_rows_v2 + per-sample cols)     */
+  /* @TASK T5.2 - Search v2: Contig | Length | Family | Detection | Confidence | Best Hit | per-sample Cov/RPM */
+  /* ---------------------------------------------------------------------- */
+  var _tableRows   = [];   // holds current filtered set for sorting
+  var _allRows     = [];   // full unfiltered dataset
+  var _sortAsc     = {};   // sort direction per column index
+
+  // Static column keys used for sorting (per-sample cols appended dynamically)
+  var _STATIC_KEYS = ["seq_id", "length", "family", "genus", "species",
+                      "detection_method", "detection_confidence", "best_hit", "pident"];
+
+  function _esc(v) {
+    return v != null ? String(v)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;") : "";
+  }
+
+  function getFamilyColor(familyName) {
+    if (!familyName) return "#CCCCCC";
+    return ICTV_COLORS[familyName] || "#CCCCCC";
+  }
+
+  function familyFromPath(path) {
+    if (!path) return "Unclassified";
+    var parts = String(path).split("/");
+    return parts.length >= 5 ? parts[4] : parts[parts.length - 1];
+  }
+
+  function computeGcPercent(sequence) {
+    if (!sequence) return null;
+    var seq = String(sequence).toUpperCase();
+    var gc = 0;
+    var total = 0;
+    for (var i = 0; i < seq.length; i += 1) {
+      var base = seq[i];
+      if ("ACGTN".indexOf(base) !== -1) {
+        total += 1;
+        if (base === "G" || base === "C") gc += 1;
+      }
+    }
+    return total > 0 ? (gc / total) * 100.0 : null;
+  }
+
+  function _confidenceBadgeClass(c) {
+    if (!c) return "";
+    var cl = c.toLowerCase();
+    if (cl === "high")   return "badge-high";
+    if (cl === "medium") return "badge-medium";
+    return "badge-low";
+  }
+
   function _methodBadge(m) {
     if (!m) return "";
     m = m.toLowerCase();
-    if (m === "both") return "badge-green";
+    if (m === "both")    return "badge-green";
     if (m === "genomad") return "badge-blue";
     return "badge-orange";
   }
 
-  window.filterTable = function () {
-    var q = (document.getElementById("search-input").value || "").toLowerCase();
-    var rank = (document.getElementById("rank-filter").value || "").toLowerCase();
-    var method = (document.getElementById("method-filter").value || "").toLowerCase();
+  function renderSearchTableV2() {
+    var rows    = D.search_rows_v2 || [];
+    var samples = D.samples || [];
 
-    var filtered = _tableRows.filter(function (row) {
-      var matchQ = !q ||
-        (row.taxon && row.taxon.toLowerCase().includes(q)) ||
-        (row.family && row.family.toLowerCase().includes(q)) ||
-        (row.species && row.species.toLowerCase().includes(q));
-      var matchRank = !rank || (row.rank && row.rank.toLowerCase() === rank);
-      var matchMethod = !method || (row.detection_method && row.detection_method.toLowerCase() === method);
-      return matchQ && matchRank && matchMethod;
+    _allRows   = rows;
+    _tableRows = rows;
+
+    // Build dynamic header
+    var thead = document.getElementById("search-thead");
+    if (thead) {
+      var headerRow = "<tr>";
+      headerRow += "<th onclick=\"sortTableV2(0)\">Contig</th>";
+      headerRow += "<th onclick=\"sortTableV2(1)\">Length</th>";
+      headerRow += "<th onclick=\"sortTableV2(2)\">Family</th>";
+      headerRow += "<th onclick=\"sortTableV2(3)\">Genus</th>";
+      headerRow += "<th onclick=\"sortTableV2(4)\">Species</th>";
+      headerRow += "<th onclick=\"sortTableV2(5)\">Detection</th>";
+      headerRow += "<th onclick=\"sortTableV2(6)\">Confidence</th>";
+      headerRow += "<th onclick=\"sortTableV2(7)\">Best Hit</th>";
+      headerRow += "<th onclick=\"sortTableV2(8)\">%Ident</th>";
+      samples.forEach(function (s, si) {
+        var base = 9 + si * 2;
+        headerRow += "<th onclick=\"sortTableV2(" + base + ")\">" + _esc(s) + " Cov</th>";
+        headerRow += "<th onclick=\"sortTableV2(" + (base + 1) + ")\">" + _esc(s) + " RPM</th>";
+      });
+      headerRow += "</tr>";
+      thead.innerHTML = headerRow;
+    }
+
+    buildSearchDOMV2(rows, samples);
+  }
+
+  function buildSearchDOMV2(rows, samples) {
+    if (!samples) { samples = D.samples || []; }
+    var tbody   = document.getElementById("search-tbody");
+    var counter = document.getElementById("search-count");
+    if (!tbody) return;
+
+    var html = "";
+    rows.forEach(function (row) {
+      html += "<tr>";
+      html += "<td><button type='button' class='btn-link contig-detail-btn' data-seq-id='" + _esc(row.seq_id) + "'>" + _esc(row.seq_id) + "</button></td>";
+      html += "<td>" + (row.length != null ? row.length : "") + "</td>";
+      html += "<td><span class='family-chip' style='--chip-color:" + _esc(row.family_color || getFamilyColor(row.family)) + "'>" + _esc(row.family) + "</span></td>";
+      html += "<td>" + _esc(row.genus)  + "</td>";
+      html += "<td>" + _esc(row.species) + "</td>";
+      html += "<td><span class='badge " + _methodBadge(row.detection_method) + "'>" +
+              _esc(row.detection_method) + "</span></td>";
+      html += "<td><span class='badge " + _confidenceBadgeClass(row.detection_confidence) + "'>" +
+              _esc(row.detection_confidence) + "</span></td>";
+      html += "<td>" + _esc(row.best_hit)  + "</td>";
+      html += "<td>" + (row.pident != null ? Number(row.pident).toFixed(1) : "") + "</td>";
+      samples.forEach(function (s) {
+        var m = ((row.coverage_per_sample || {})[s]) || {};
+        html += "<td>" + (m.coverage != null ? Number(m.coverage).toFixed(1) : "0.0") + "</td>";
+        html += "<td>" + (m.rpm      != null ? Number(m.rpm).toFixed(1)      : "0.0") + "</td>";
+      });
+      html += "</tr>";
     });
-    buildTableDOM(filtered);
+    tbody.innerHTML = html;
+    if (counter) { counter.textContent = rows.length + " record(s) shown"; }
+  }
+
+  window.filterSearchV2 = function () {
+    var q          = (document.getElementById("search-input").value || "").toLowerCase();
+    var family     = (document.getElementById("family-filter-search").value || "").toLowerCase();
+    var confidence = (document.getElementById("confidence-filter").value || "").toLowerCase();
+    var method     = (document.getElementById("method-filter").value || "").toLowerCase();
+
+    var filtered = _allRows.filter(function (row) {
+      var matchQ = !q ||
+        (row.seq_id         && row.seq_id.toLowerCase().includes(q)) ||
+        (row.family         && row.family.toLowerCase().includes(q)) ||
+        (row.genus          && row.genus.toLowerCase().includes(q)) ||
+        (row.species        && row.species.toLowerCase().includes(q)) ||
+        (row.best_hit       && row.best_hit.toLowerCase().includes(q));
+      var matchFamily     = !family     || (row.family && row.family.toLowerCase() === family);
+      var matchConf       = !confidence || (row.detection_confidence &&
+                              row.detection_confidence.toLowerCase() === confidence);
+      var matchMethod     = !method     || (row.detection_method &&
+                              row.detection_method.toLowerCase() === method);
+      return matchQ && matchFamily && matchConf && matchMethod;
+    });
+    _tableRows = filtered;
+    buildSearchDOMV2(filtered, D.samples || []);
   };
 
-  window.clearFilters = function () {
-    document.getElementById("search-input").value = "";
-    document.getElementById("rank-filter").value = "";
-    document.getElementById("method-filter").value = "";
-    buildTableDOM(_tableRows);
+  window.clearSearchFilters = function () {
+    document.getElementById("search-input").value         = "";
+    document.getElementById("family-filter-search").value = "";
+    document.getElementById("confidence-filter").value    = "";
+    document.getElementById("method-filter").value        = "";
+    _tableRows = _allRows;
+    buildSearchDOMV2(_allRows, D.samples || []);
   };
 
   /* ---------------------------------------------------------------------- */
-  /* Table sorting                                                             */
+  /* Table sorting (v2)                                                       */
   /* ---------------------------------------------------------------------- */
-  var _sortAsc = {};
-  window.sortTable = function (colIdx) {
+  window.sortTableV2 = function (colIdx) {
     _sortAsc[colIdx] = !_sortAsc[colIdx];
-    var keys = ["taxon","rank","family","sample","rpm","detection_method","baltimore_group"];
-    var key = keys[colIdx];
-    var sorted = _tableRows.slice().sort(function (a, b) {
-      var va = a[key] || "";
-      var vb = b[key] || "";
+    var samples = D.samples || [];
+    var sorted  = _tableRows.slice().sort(function (a, b) {
+      var va, vb;
+      if (colIdx < _STATIC_KEYS.length) {
+        va = a[_STATIC_KEYS[colIdx]];
+        vb = b[_STATIC_KEYS[colIdx]];
+      } else {
+        // Per-sample column: colIdx 9,10 = sample[0] cov,rpm; 11,12 = sample[1] cov,rpm ...
+        var sIdx     = Math.floor((colIdx - 9) / 2);
+        var isRpm    = (colIdx - 9) % 2 === 1;
+        var sKey     = isRpm ? "rpm" : "coverage";
+        var sName    = samples[sIdx] || "";
+        var mA = ((a.coverage_per_sample || {})[sName]) || {};
+        var mB = ((b.coverage_per_sample || {})[sName]) || {};
+        va = mA[sKey] || 0;
+        vb = mB[sKey] || 0;
+      }
+      va = va != null ? va : "";
+      vb = vb != null ? vb : "";
       if (typeof va === "number" && typeof vb === "number") {
         return _sortAsc[colIdx] ? va - vb : vb - va;
       }
@@ -809,8 +1518,90 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         ? String(va).localeCompare(String(vb))
         : String(vb).localeCompare(String(va));
     });
-    buildTableDOM(sorted);
+    _tableRows = sorted;
+    buildSearchDOMV2(sorted, samples);
   };
+
+  // Keep old names as no-ops in case anything references them (backward compat)
+  window.filterTable  = window.filterSearchV2;
+  window.clearFilters = window.clearSearchFilters;
+  window.sortTable    = window.sortTableV2;
+
+  function openContigModal(row) {
+    var modal = document.getElementById("contig-modal");
+    var title = document.getElementById("contig-modal-title");
+    var body = document.getElementById("contig-modal-body");
+    if (!modal || !title || !body || !row) return;
+
+    var sequence = (D.contig_sequences || {})[row.seq_id] || "";
+    var gc = computeGcPercent(sequence);
+    var samples = D.samples || [];
+    var familyColor = row.family_color || getFamilyColor(row.family);
+    var sampleSummary = samples.map(function (sample) {
+      var metrics = ((row.coverage_per_sample || {})[sample]) || {};
+      return "<div class='modal-stat'><div class='modal-stat-label'>" + _esc(sample) +
+        "</div><div class='modal-stat-value'>RPM " + Number(metrics.rpm || 0).toFixed(2) +
+        " / Cov " + Number(metrics.coverage || 0).toFixed(2) + "</div></div>";
+    }).join("");
+
+    title.textContent = row.seq_id || "Contig details";
+    body.innerHTML =
+      "<div class='modal-summary'>" +
+        "<div class='modal-stat'><div class='modal-stat-label'>Family</div><div class='modal-stat-value'><span class='family-chip' style='--chip-color:" + _esc(familyColor) + "'>" + _esc(row.family || "Unclassified") + "</span></div></div>" +
+        "<div class='modal-stat'><div class='modal-stat-label'>Genus</div><div class='modal-stat-value'>" + _esc(row.genus || "N/A") + "</div></div>" +
+        "<div class='modal-stat'><div class='modal-stat-label'>Species</div><div class='modal-stat-value'>" + _esc(row.species || "N/A") + "</div></div>" +
+        "<div class='modal-stat'><div class='modal-stat-label'>Length</div><div class='modal-stat-value'>" + Number(row.length || 0) + " bp</div></div>" +
+        "<div class='modal-stat'><div class='modal-stat-label'>GC Content</div><div class='modal-stat-value'>" + (gc == null ? "N/A" : gc.toFixed(2) + "%") + "</div></div>" +
+        "<div class='modal-stat'><div class='modal-stat-label'>Detection</div><div class='modal-stat-value'>" + _esc(row.detection_method || "N/A") + " / " + _esc(row.detection_confidence || "N/A") + "</div></div>" +
+      "</div>" +
+      "<div class='modal-section-title'>Best Hit</div><div>" + _esc(row.best_hit || "N/A") + "</div>" +
+      "<div class='modal-section-title'>Taxonomy</div><div>" + _esc(row.taxonomy || "N/A") + "</div>" +
+      (sampleSummary ? "<div class='modal-section-title'>Per-sample Metrics</div><div class='modal-summary'>" + sampleSummary + "</div>" : "") +
+      "<div class='modal-section-title'>Sequence</div>" +
+      "<div class='sequence-toolbar'><span>" + (sequence ? (sequence.length + " nt embedded") : "Sequence unavailable in embedded dashboard") + "</span>" +
+      "<button class='btn-export copy-sequence-btn' type='button' data-seq-id='" + _esc(row.seq_id) + "'>Copy Sequence</button></div>" +
+      "<div class='sequence-box'>" + (sequence ? _esc(sequence) : "Sequence unavailable in embedded dashboard.") + "</div>";
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  window.copyContigSequence = function (seqId) {
+    var sequence = ((D.contig_sequences || {})[seqId]) || "";
+    if (!sequence || !navigator.clipboard) return;
+    navigator.clipboard.writeText(sequence);
+  };
+
+  window.closeContigModal = function () {
+    var modal = document.getElementById("contig-modal");
+    if (!modal) return;
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden", "true");
+  };
+
+  document.addEventListener("click", function (event) {
+    var contigBtn = event.target.closest(".contig-detail-btn");
+    if (contigBtn) {
+      var seqId = contigBtn.getAttribute("data-seq-id");
+      var row = (_allRows || []).find(function (r) { return r.seq_id === seqId; });
+      openContigModal(row);
+      return;
+    }
+    var copyBtn = event.target.closest(".copy-sequence-btn");
+    if (copyBtn) {
+      window.copyContigSequence(copyBtn.getAttribute("data-seq-id"));
+      return;
+    }
+    var modal = document.getElementById("contig-modal");
+    if (event.target === modal) {
+      window.closeContigModal();
+    }
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      window.closeContigModal();
+    }
+  });
 
   /* ---------------------------------------------------------------------- */
   /* Help modal (simple)                                                       */
@@ -818,11 +1609,16 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   window.showHelp = function () {
     alert(
       "DeepInvirus Dashboard\n\n" +
-      "Overview: Summary statistics and Sankey taxonomic flow\n" +
-      "Composition: Heatmap (log10 RPM) and relative abundance barplot\n" +
+      "Overview : Summary statistics and Sankey taxonomic flow\n" +
+      "Taxonomy : Interactive Sankey / Sunburst / Treemap — switch mode and sample with the controls\n" +
+      "Coverage : Per-sample viral contig coverage heatmap and table\n" +
       "Diversity: PCoA (Bray-Curtis beta diversity) and alpha diversity boxplots\n" +
-      "Search: Full-text search and filtering of all detected viral taxa\n\n" +
-      "All charts are interactive via Plotly.js (zoom, pan, hover, download)."
+      "Comparison: Family- or contig-level RPM comparison across samples\n" +
+      "Search   : Full-text search and filtering of all detected viral contigs\n" +
+      "           Columns include per-sample coverage and RPM\n" +
+      "Results  : Publication-quality figures generated during report creation\n\n" +
+      "All charts are interactive via Plotly.js (zoom, pan, hover, download).\n" +
+      "Use Export SVG / Export PNG buttons to save Taxonomy charts."
     );
   };
 
@@ -962,13 +1758,16 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     showOfflineFallback();
   }
 
+  installExportToolbars();
+
   _chartsRendered["tab-overview"] = true;
   if (typeof Plotly !== 'undefined') {
     renderSankey();
   }
 
-  // Pre-populate search rows in background
-  if (D.search_rows) { _tableRows = D.search_rows; }
+  // Pre-populate search rows v2 in background so sort/filter work before tab is opened
+  // @TASK T5.2 - pre-load search_rows_v2
+  if (D.search_rows_v2) { _allRows = D.search_rows_v2; _tableRows = D.search_rows_v2; }
 
 })();
 </script>

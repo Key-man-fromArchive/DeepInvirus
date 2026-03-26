@@ -1,5 +1,4 @@
-// @TASK T0.4 - Input validation and samplesheet generation
-// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
+// Input validation and samplesheet generation
 
 process INPUT_CHECK {
     tag "input_check"

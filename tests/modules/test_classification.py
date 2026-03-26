@@ -44,27 +44,30 @@ MERGE_RESULTS_NF = MODULES_DIR / "merge_results.nf"
 DIVERSITY_NF = MODULES_DIR / "diversity.nf"
 CLASSIFICATION_NF = SUBWORKFLOWS_DIR / "classification.nf"
 
-# bigtable.tsv expected columns (04-database-design.md section 4.1)
+# bigtable.tsv expected columns — matches merge_results.py output_cols
+# Co-assembly model: one row per seq_id per sample (from coverage files)
 BIGTABLE_COLUMNS = [
     "seq_id",
     "sample",
-    "seq_type",
     "length",
     "detection_method",
     "detection_score",
+    "taxonomy",
+    "family",
+    "coverage",
+    "breadth",
+    "detection_confidence",
+    "rpm",
     "taxid",
     "domain",
     "phylum",
     "class",
     "order",
-    "family",
     "genus",
     "species",
     "ictv_classification",
     "baltimore_group",
-    "count",
-    "rpm",
-    "coverage",
+    "group",
 ]
 
 # alpha_diversity.tsv expected columns (04-database-design.md section 4.3)
@@ -117,17 +120,40 @@ def mock_lineage_tsv(tmp_dir: Path) -> Path:
 
 
 @pytest.fixture
-def mock_coverage_tsv(tmp_dir: Path) -> Path:
-    """Mock CoverM coverage output."""
-    content = textwrap.dedent("""\
+def mock_coverage_tsv(tmp_dir: Path) -> list[Path]:
+    """Mock per-sample CoverM coverage outputs (co-assembly model).
+
+    Each file is named ``<sample>_coverage.tsv`` so that
+    ``extract_sample_name`` recovers the correct sample name.
+    Coverage files are per-sample; contigs detected in that sample appear here.
+    """
+    files: list[Path] = []
+
+    # sample_A: viral_contig_001
+    sa = tmp_dir / "sample_A_coverage.tsv"
+    sa.write_text(textwrap.dedent("""\
         Contig\tMean\tTrimmed Mean\tCovered Bases\tLength
         viral_contig_001\t18.7\t17.2\t2500\t2847
+    """))
+    files.append(sa)
+
+    # sample_B: viral_contig_003
+    sb = tmp_dir / "sample_B_coverage.tsv"
+    sb.write_text(textwrap.dedent("""\
+        Contig\tMean\tTrimmed Mean\tCovered Bases\tLength
         viral_contig_003\t12.2\t11.5\t1400\t1524
+    """))
+    files.append(sb)
+
+    # sample_C: viral_contig_005
+    sc = tmp_dir / "sample_C_coverage.tsv"
+    sc.write_text(textwrap.dedent("""\
+        Contig\tMean\tTrimmed Mean\tCovered Bases\tLength
         viral_contig_005\t25.4\t24.1\t3100\t3200
-    """)
-    p = tmp_dir / "coverage.tsv"
-    p.write_text(content)
-    return p
+    """))
+    files.append(sc)
+
+    return files
 
 
 @pytest.fixture
@@ -148,14 +174,12 @@ def mock_detection_tsv(tmp_dir: Path) -> Path:
 
 @pytest.fixture
 def mock_sample_map_tsv(tmp_dir: Path) -> Path:
-    """Mock sample mapping file: seq_id -> sample + seq_type + total_reads."""
+    """Mock sample mapping file: sample -> group (co-assembly model)."""
     content = textwrap.dedent("""\
-        seq_id\tsample\tseq_type\ttotal_reads\tcount
-        viral_contig_001\tsample_A\tcontig\t199144\t245
-        read_contig_002\tsample_A\tread\t199144\t128
-        viral_contig_003\tsample_B\tcontig\t197603\t89
-        read_contig_004\tsample_B\tread\t197603\t156
-        viral_contig_005\tsample_C\tcontig\t199142\t312
+        sample\tgroup
+        sample_A\tgroup_1
+        sample_B\tgroup_1
+        sample_C\tgroup_2
     """)
     p = tmp_dir / "sample_map.tsv"
     p.write_text(content)
@@ -206,6 +230,37 @@ def mock_sample_taxon_matrix_tsv(tmp_dir: Path) -> Path:
 class TestMergeResultsScript:
     """Tests for bin/merge_results.py."""
 
+    @staticmethod
+    def _build_merge_cmd(
+        taxonomy: Path,
+        lineage: Path,
+        coverage: list[Path],
+        detection: Path,
+        sample_map: Path,
+        ictv: Path,
+        bigtable_out: Path,
+        matrix_out: Path,
+        counts_out: Path,
+    ) -> list[str]:
+        """Build the merge_results.py CLI command list."""
+        cmd = [
+            sys.executable,
+            str(MERGE_RESULTS_SCRIPT),
+            "--taxonomy", str(taxonomy),
+            "--lineage", str(lineage),
+            "--coverage",
+        ]
+        cmd.extend(str(p) for p in coverage)
+        cmd.extend([
+            "--detection", str(detection),
+            "--sample-map", str(sample_map),
+            "--ictv", str(ictv),
+            "--out-bigtable", str(bigtable_out),
+            "--out-matrix", str(matrix_out),
+            "--out-counts", str(counts_out),
+        ])
+        return cmd
+
     def test_script_exists(self) -> None:
         assert MERGE_RESULTS_SCRIPT.exists(), (
             f"merge_results.py not found at {MERGE_RESULTS_SCRIPT}"
@@ -225,33 +280,22 @@ class TestMergeResultsScript:
         tmp_dir: Path,
         mock_taxonomy_tsv: Path,
         mock_lineage_tsv: Path,
-        mock_coverage_tsv: Path,
+        mock_coverage_tsv: list[Path],
         mock_detection_tsv: Path,
         mock_sample_map_tsv: Path,
         mock_ictv_tsv: Path,
     ) -> None:
-        """bigtable.tsv must have exactly the columns from 04-database-design.md 4.1."""
+        """bigtable.tsv must have exactly the columns from merge_results.py output_cols."""
         bigtable_out = tmp_dir / "bigtable.tsv"
         matrix_out = tmp_dir / "sample_taxon_matrix.tsv"
         counts_out = tmp_dir / "sample_counts.tsv"
 
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(MERGE_RESULTS_SCRIPT),
-                "--taxonomy", str(mock_taxonomy_tsv),
-                "--lineage", str(mock_lineage_tsv),
-                "--coverage", str(mock_coverage_tsv),
-                "--detection", str(mock_detection_tsv),
-                "--sample-map", str(mock_sample_map_tsv),
-                "--ictv", str(mock_ictv_tsv),
-                "--out-bigtable", str(bigtable_out),
-                "--out-matrix", str(matrix_out),
-                "--out-counts", str(counts_out),
-            ],
-            capture_output=True,
-            text=True,
+        cmd = self._build_merge_cmd(
+            mock_taxonomy_tsv, mock_lineage_tsv, mock_coverage_tsv,
+            mock_detection_tsv, mock_sample_map_tsv, mock_ictv_tsv,
+            bigtable_out, matrix_out, counts_out,
         )
+        result = subprocess.run(cmd, capture_output=True, text=True)
         assert result.returncode == 0, (
             f"merge_results.py failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
         )
@@ -272,77 +316,58 @@ class TestMergeResultsScript:
         tmp_dir: Path,
         mock_taxonomy_tsv: Path,
         mock_lineage_tsv: Path,
-        mock_coverage_tsv: Path,
+        mock_coverage_tsv: list[Path],
         mock_detection_tsv: Path,
         mock_sample_map_tsv: Path,
         mock_ictv_tsv: Path,
     ) -> None:
-        """bigtable should have one row per sequence."""
+        """bigtable should have one row per seq_id per sample (inner join on coverage)."""
         bigtable_out = tmp_dir / "bigtable.tsv"
         matrix_out = tmp_dir / "sample_taxon_matrix.tsv"
         counts_out = tmp_dir / "sample_counts.tsv"
 
-        subprocess.run(
-            [
-                sys.executable,
-                str(MERGE_RESULTS_SCRIPT),
-                "--taxonomy", str(mock_taxonomy_tsv),
-                "--lineage", str(mock_lineage_tsv),
-                "--coverage", str(mock_coverage_tsv),
-                "--detection", str(mock_detection_tsv),
-                "--sample-map", str(mock_sample_map_tsv),
-                "--ictv", str(mock_ictv_tsv),
-                "--out-bigtable", str(bigtable_out),
-                "--out-matrix", str(matrix_out),
-                "--out-counts", str(counts_out),
-            ],
-            capture_output=True,
-            text=True,
+        cmd = self._build_merge_cmd(
+            mock_taxonomy_tsv, mock_lineage_tsv, mock_coverage_tsv,
+            mock_detection_tsv, mock_sample_map_tsv, mock_ictv_tsv,
+            bigtable_out, matrix_out, counts_out,
         )
+        subprocess.run(cmd, capture_output=True, text=True)
         with open(bigtable_out) as f:
             lines = f.readlines()
-        # header + 5 data rows
-        assert len(lines) == 6, f"Expected 6 lines (1 header + 5 data), got {len(lines)}"
+        # Coverage has 3 contigs across 3 samples (1 contig each) -> 3 data rows
+        # header + 3 data rows = 4 lines
+        assert len(lines) == 4, f"Expected 4 lines (1 header + 3 data), got {len(lines)}"
 
     def test_rpm_calculation(
         self,
         tmp_dir: Path,
         mock_taxonomy_tsv: Path,
         mock_lineage_tsv: Path,
-        mock_coverage_tsv: Path,
+        mock_coverage_tsv: list[Path],
         mock_detection_tsv: Path,
         mock_sample_map_tsv: Path,
         mock_ictv_tsv: Path,
     ) -> None:
-        """RPM = count / total_reads * 1e6. Verify for first row."""
+        """RPM = coverage / total_sample_coverage * 1e6 (co-assembly model)."""
         bigtable_out = tmp_dir / "bigtable.tsv"
         matrix_out = tmp_dir / "sample_taxon_matrix.tsv"
         counts_out = tmp_dir / "sample_counts.tsv"
 
-        subprocess.run(
-            [
-                sys.executable,
-                str(MERGE_RESULTS_SCRIPT),
-                "--taxonomy", str(mock_taxonomy_tsv),
-                "--lineage", str(mock_lineage_tsv),
-                "--coverage", str(mock_coverage_tsv),
-                "--detection", str(mock_detection_tsv),
-                "--sample-map", str(mock_sample_map_tsv),
-                "--ictv", str(mock_ictv_tsv),
-                "--out-bigtable", str(bigtable_out),
-                "--out-matrix", str(matrix_out),
-                "--out-counts", str(counts_out),
-            ],
-            capture_output=True,
-            text=True,
+        cmd = self._build_merge_cmd(
+            mock_taxonomy_tsv, mock_lineage_tsv, mock_coverage_tsv,
+            mock_detection_tsv, mock_sample_map_tsv, mock_ictv_tsv,
+            bigtable_out, matrix_out, counts_out,
         )
+        subprocess.run(cmd, capture_output=True, text=True)
         import pandas as pd
 
         df = pd.read_csv(bigtable_out, sep="\t")
 
-        # viral_contig_001: count=245, total_reads=199144
+        # sample_A has only viral_contig_001 with coverage=18.7
+        # total_sample_coverage for sample_A = 18.7
+        # RPM = 18.7 / 18.7 * 1e6 = 1000000.0
         row = df[df["seq_id"] == "viral_contig_001"].iloc[0]
-        expected_rpm = 245 / 199144 * 1e6
+        expected_rpm = 18.7 / 18.7 * 1e6  # single contig per sample -> 1_000_000
         assert abs(float(row["rpm"]) - expected_rpm) < 0.5, (
             f"RPM mismatch: expected ~{expected_rpm:.1f}, got {row['rpm']}"
         )
@@ -352,7 +377,7 @@ class TestMergeResultsScript:
         tmp_dir: Path,
         mock_taxonomy_tsv: Path,
         mock_lineage_tsv: Path,
-        mock_coverage_tsv: Path,
+        mock_coverage_tsv: list[Path],
         mock_detection_tsv: Path,
         mock_sample_map_tsv: Path,
         mock_ictv_tsv: Path,
@@ -362,23 +387,12 @@ class TestMergeResultsScript:
         matrix_out = tmp_dir / "sample_taxon_matrix.tsv"
         counts_out = tmp_dir / "sample_counts.tsv"
 
-        subprocess.run(
-            [
-                sys.executable,
-                str(MERGE_RESULTS_SCRIPT),
-                "--taxonomy", str(mock_taxonomy_tsv),
-                "--lineage", str(mock_lineage_tsv),
-                "--coverage", str(mock_coverage_tsv),
-                "--detection", str(mock_detection_tsv),
-                "--sample-map", str(mock_sample_map_tsv),
-                "--ictv", str(mock_ictv_tsv),
-                "--out-bigtable", str(bigtable_out),
-                "--out-matrix", str(matrix_out),
-                "--out-counts", str(counts_out),
-            ],
-            capture_output=True,
-            text=True,
+        cmd = self._build_merge_cmd(
+            mock_taxonomy_tsv, mock_lineage_tsv, mock_coverage_tsv,
+            mock_detection_tsv, mock_sample_map_tsv, mock_ictv_tsv,
+            bigtable_out, matrix_out, counts_out,
         )
+        subprocess.run(cmd, capture_output=True, text=True)
         import pandas as pd
 
         df = pd.read_csv(matrix_out, sep="\t")
@@ -395,48 +409,43 @@ class TestMergeResultsScript:
         tmp_dir: Path,
         mock_taxonomy_tsv: Path,
         mock_lineage_tsv: Path,
-        mock_coverage_tsv: Path,
+        mock_coverage_tsv: list[Path],
         mock_detection_tsv: Path,
         mock_sample_map_tsv: Path,
         mock_ictv_tsv: Path,
     ) -> None:
-        """Reads (seq_type=read) should have coverage=0.0."""
+        """Short read contigs not in coverage should be excluded (inner join).
+
+        Co-assembly model: only contigs with coverage data appear in bigtable.
+        read_contig_002 and read_contig_004 have no coverage rows, so they
+        should not be present in the output.
+        """
         bigtable_out = tmp_dir / "bigtable.tsv"
         matrix_out = tmp_dir / "sample_taxon_matrix.tsv"
         counts_out = tmp_dir / "sample_counts.tsv"
 
-        subprocess.run(
-            [
-                sys.executable,
-                str(MERGE_RESULTS_SCRIPT),
-                "--taxonomy", str(mock_taxonomy_tsv),
-                "--lineage", str(mock_lineage_tsv),
-                "--coverage", str(mock_coverage_tsv),
-                "--detection", str(mock_detection_tsv),
-                "--sample-map", str(mock_sample_map_tsv),
-                "--ictv", str(mock_ictv_tsv),
-                "--out-bigtable", str(bigtable_out),
-                "--out-matrix", str(matrix_out),
-                "--out-counts", str(counts_out),
-            ],
-            capture_output=True,
-            text=True,
+        cmd = self._build_merge_cmd(
+            mock_taxonomy_tsv, mock_lineage_tsv, mock_coverage_tsv,
+            mock_detection_tsv, mock_sample_map_tsv, mock_ictv_tsv,
+            bigtable_out, matrix_out, counts_out,
         )
+        subprocess.run(cmd, capture_output=True, text=True)
         import pandas as pd
 
         df = pd.read_csv(bigtable_out, sep="\t")
-        reads = df[df["seq_type"] == "read"]
-        for _, row in reads.iterrows():
-            assert float(row["coverage"]) == 0.0, (
-                f"Read {row['seq_id']} should have coverage=0.0, got {row['coverage']}"
-            )
+        # read contigs have no coverage data -> excluded by inner join
+        read_rows = df[df["seq_id"].str.startswith("read_")]
+        assert len(read_rows) == 0, (
+            f"Read contigs should be excluded (no coverage data), "
+            f"but found: {read_rows['seq_id'].tolist()}"
+        )
 
     def test_sample_counts_output(
         self,
         tmp_dir: Path,
         mock_taxonomy_tsv: Path,
         mock_lineage_tsv: Path,
-        mock_coverage_tsv: Path,
+        mock_coverage_tsv: list[Path],
         mock_detection_tsv: Path,
         mock_sample_map_tsv: Path,
         mock_ictv_tsv: Path,
@@ -446,23 +455,12 @@ class TestMergeResultsScript:
         matrix_out = tmp_dir / "sample_taxon_matrix.tsv"
         counts_out = tmp_dir / "sample_counts.tsv"
 
-        subprocess.run(
-            [
-                sys.executable,
-                str(MERGE_RESULTS_SCRIPT),
-                "--taxonomy", str(mock_taxonomy_tsv),
-                "--lineage", str(mock_lineage_tsv),
-                "--coverage", str(mock_coverage_tsv),
-                "--detection", str(mock_detection_tsv),
-                "--sample-map", str(mock_sample_map_tsv),
-                "--ictv", str(mock_ictv_tsv),
-                "--out-bigtable", str(bigtable_out),
-                "--out-matrix", str(matrix_out),
-                "--out-counts", str(counts_out),
-            ],
-            capture_output=True,
-            text=True,
+        cmd = self._build_merge_cmd(
+            mock_taxonomy_tsv, mock_lineage_tsv, mock_coverage_tsv,
+            mock_detection_tsv, mock_sample_map_tsv, mock_ictv_tsv,
+            bigtable_out, matrix_out, counts_out,
         )
+        subprocess.run(cmd, capture_output=True, text=True)
         import pandas as pd
 
         df = pd.read_csv(counts_out, sep="\t")

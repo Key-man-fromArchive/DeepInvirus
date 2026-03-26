@@ -1,11 +1,9 @@
-// @TASK T4.3 - Alpha/beta diversity analysis
-// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
-// @SPEC docs/planning/04-database-design.md#4.3-alpha_diversity
-// @SPEC docs/planning/04-database-design.md#4.4-beta_diversity
+// Alpha/beta diversity analysis
 
 process DIVERSITY {
     tag "diversity"
     label 'process_diversity'
+    publishDir "${params.outdir}/diversity", mode: 'copy'
 
     input:
     path(sample_taxon_matrix)

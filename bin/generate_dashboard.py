@@ -53,6 +53,28 @@ _ASSETS_DIR = Path(__file__).parent.parent / "assets"
 _TEMPLATE_NAME = "dashboard_template.html"
 PLOTLY_VERSION = "2.32.0"
 
+ICTV_FAMILY_COLORS = {
+    "Parvoviridae": "#E69F00",
+    "Baculoviridae": "#56B4E9",
+    "Sinhaliviridae": "#009E73",
+    "Bromoviridae": "#F0E442",
+    "Picornaviridae": "#0072B2",
+    "Flaviviridae": "#D55E00",
+    "Narnaviridae": "#CC79A7",
+    "Mitoviridae": "#882255",
+    "Endornaviridae": "#44AA99",
+    "Virgaviridae": "#332288",
+    "Fiersviridae": "#DDCC77",
+    "Adintoviridae": "#117733",
+    "Iflaviridae": "#88CCEE",
+    "Dicistroviridae": "#AA4499",
+    "Nodaviridae": "#661100",
+    "Iridoviridae": "#6699CC",
+    "Nudiviridae": "#888888",
+    "Genomoviridae": "#AA4466",
+    "Unclassified": "#CCCCCC",
+}
+
 
 # ---------------------------------------------------------------------------
 # Data loading helpers
@@ -134,6 +156,23 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def get_family_color(family_name: Any) -> str:
+    """Return the canonical color for a family, falling back deterministically per name."""
+    family = _safe_str(family_name) or "Unclassified"
+    if family.lower() in {"unknown", "review"}:
+        family = "Unclassified"
+    return ICTV_FAMILY_COLORS.get(
+        family,
+        "#" + hex(hash(family) % 0xFFFFFF)[2:].zfill(6),
+    )
+
+
+def infer_family_name(row: pd.Series | dict[str, Any]) -> str:
+    """Extract a usable family label from a row-like object."""
+    family = _safe_str(row.get("family", ""))
+    return family or "Unclassified"
+
+
 def build_host_removal_data(host_stats: pd.DataFrame) -> dict[str, Any]:
     """Build host removal statistics data for the dashboard.
 
@@ -205,7 +244,7 @@ def build_summary(bigtable: pd.DataFrame, matrix: pd.DataFrame) -> dict[str, Any
     )
     n_species = bigtable[species_col].dropna().nunique() if species_col else 0
 
-    n_sequences = len(bigtable)
+    n_sequences = bigtable["seq_id"].nunique()
 
     # Top virus: highest mean RPM across samples from the matrix
     top_virus = "N/A"
@@ -238,68 +277,113 @@ def build_sankey(bigtable: pd.DataFrame) -> dict[str, Any]:
 
     Returns a dict with keys: nodes, sources, targets, values, node_colors
     """
-    PALETTE = [
-        "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728",
-        "#9467BD", "#8C564B", "#7F7F7F",
-    ]
-
     if bigtable.empty:
         return {"nodes": [], "sources": [], "targets": [], "values": [], "node_colors": []}
 
-    required = {"domain", "family", "genus"}
-    if not required.issubset(bigtable.columns):
+    if "domain" not in bigtable.columns or "family" not in bigtable.columns:
         return {"nodes": [], "sources": [], "targets": [], "values": [], "node_colors": []}
 
-    # Aggregate total count by (domain, family, genus)
+    # Determine grouping columns: use genus only if it has meaningful data
+    has_genus = (
+        "genus" in bigtable.columns
+        and not bigtable["genus"].dropna().empty
+        and not bigtable["genus"].dropna().str.strip().eq("").all()
+    )
+    # Aggregate total count by (domain, family[, genus])
     count_col = "count" if "count" in bigtable.columns else None
-    grp_cols = ["domain", "family", "genus"]
+    grp_cols = ["domain", "family", "genus"] if has_genus else ["domain", "family"]
+
+    # Use unique contigs only (bigtable has per-sample rows)
+    unique_bt = bigtable.drop_duplicates(subset=["seq_id"]) if "seq_id" in bigtable.columns else bigtable
+
+    # Clean: replace empty strings / whitespace-only with NaN so dropna works
+    bt_clean = unique_bt[grp_cols].copy()
+    for c in grp_cols:
+        bt_clean[c] = bt_clean[c].astype(str).str.strip().replace("", pd.NA)
+
     if count_col:
+        bt_clean[count_col] = bigtable[count_col]
         agg = (
-            bigtable[grp_cols + [count_col]]
+            bt_clean
             .dropna(subset=grp_cols)
             .groupby(grp_cols, as_index=False)[count_col]
             .sum()
         )
     else:
         agg = (
-            bigtable[grp_cols]
-            .dropna()
+            bt_clean
+            .dropna(subset=grp_cols)
             .value_counts()
             .reset_index(name="count")
         )
 
-    # Build unique node list  (domain nodes, then family, then genus)
-    domains = sorted(agg["domain"].unique())
-    families = sorted(agg["family"].unique())
-    genera = sorted(agg["genus"].unique())
+    # Build unique node list with level prefixes to avoid label collision
+    # (e.g. "Unclassified" can appear as both domain and family)
+    domains_raw = sorted(agg["domain"].unique())
+    families_raw = sorted(agg["family"].unique())
+    genera_raw = sorted(agg["genus"].unique()) if has_genus else []
 
-    nodes = domains + families + genera
+    # Use display labels but track by (level, name) to avoid collisions
+    domain_nodes = [f"{d}" for d in domains_raw]
+    family_nodes = [f for f in families_raw if f not in domains_raw]
+    # Families that collide with domain names get a suffix
+    family_nodes += [f"{f} (family)" for f in families_raw if f in domains_raw]
+    genus_nodes = [g for g in genera_raw if g not in domains_raw and g not in families_raw]
+
+    nodes = domain_nodes + family_nodes + genus_nodes
     node_idx = {n: i for i, n in enumerate(nodes)}
 
-    # Colour: cycle palette over node slots
-    node_colors = [
-        PALETTE[i % len(PALETTE)] for i in range(len(nodes))
-    ]
+    # Build lookup for family names that were renamed
+    family_label = {}
+    for f in families_raw:
+        if f in domains_raw:
+            family_label[f] = f"{f} (family)"
+        else:
+            family_label[f] = f
+
+    # Canonical colour rule: family nodes use fixed ICTV colours, genus nodes
+    # inherit their family's colour, and non-family ancestors stay neutral.
+    genus_family_map: dict[str, str] = {}
+    if has_genus:
+        for _, row in agg[["family", "genus"]].dropna().drop_duplicates().iterrows():
+            genus_family_map[str(row["genus"])] = str(row["family"])
+
+    node_colors: list[str] = []
+    for node in nodes:
+        if node in domains_raw:
+            node_colors.append("#D9D9D9")
+            continue
+        raw_family = node[:-9] if node.endswith(" (family)") else node
+        if raw_family in families_raw:
+            node_colors.append(get_family_color(raw_family))
+            continue
+        family = genus_family_map.get(node, "Unclassified")
+        node_colors.append(get_family_color(family))
 
     sources: list[int] = []
     targets: list[int] = []
     values: list[float] = []
 
-    # Domain → Family links
+    # Domain -> Family links (use family_label for renamed nodes)
     df_links = agg.groupby(["domain", "family"], as_index=False)["count"].sum()
     for _, row in df_links.iterrows():
-        if row["domain"] in node_idx and row["family"] in node_idx:
-            sources.append(node_idx[row["domain"]])
-            targets.append(node_idx[row["family"]])
+        d_node = row["domain"]
+        f_node = family_label.get(row["family"], row["family"])
+        if d_node in node_idx and f_node in node_idx and d_node != f_node:
+            sources.append(node_idx[d_node])
+            targets.append(node_idx[f_node])
             values.append(_safe_float(row["count"], 1))
 
-    # Family → Genus links
-    fg_links = agg.groupby(["family", "genus"], as_index=False)["count"].sum()
-    for _, row in fg_links.iterrows():
-        if row["family"] in node_idx and row["genus"] in node_idx:
-            sources.append(node_idx[row["family"]])
-            targets.append(node_idx[row["genus"]])
-            values.append(_safe_float(row["count"], 1))
+    # Family -> Genus links (only when genus data exists)
+    if has_genus:
+        fg_links = agg.groupby(["family", "genus"], as_index=False)["count"].sum()
+        for _, row in fg_links.iterrows():
+            f_node = family_label.get(row["family"], row["family"])
+            g_node = row["genus"]
+            if f_node in node_idx and g_node in node_idx and f_node != g_node:
+                sources.append(node_idx[f_node])
+                targets.append(node_idx[g_node])
+                values.append(_safe_float(row["count"], 1))
 
     return {
         "nodes": nodes,
@@ -342,12 +426,12 @@ def build_barplot(matrix: pd.DataFrame, top_n: int = 20) -> dict[str, Any]:
     Returns a dict with keys: samples, taxa, values (list of lists)
     """
     if matrix.empty or "taxon" not in matrix.columns:
-        return {"samples": [], "taxa": [], "values": []}
+        return {"samples": [], "taxa": [], "values": [], "colors": []}
 
     meta_cols = {"taxon", "taxid", "rank"}
     sample_cols = [c for c in matrix.columns if c not in meta_cols]
     if not sample_cols:
-        return {"samples": [], "taxa": [], "values": []}
+        return {"samples": [], "taxa": [], "values": [], "colors": []}
 
     vals = matrix[sample_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
     taxa = matrix["taxon"].tolist()
@@ -377,6 +461,7 @@ def build_barplot(matrix: pd.DataFrame, top_n: int = 20) -> dict[str, Any]:
         "samples": sample_cols,
         "taxa": result_taxa,
         "values": result_values,
+        "colors": [get_family_color(taxon) if taxon != "Others" else "#BDBDBD" for taxon in result_taxa],
     }
 
 
@@ -514,6 +599,410 @@ def build_search_rows(bigtable: pd.DataFrame) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# @TASK T5.2 - Dashboard v2 extended data structures
+# @SPEC docs/planning/05-design-system.md#Sunburst-Treemap
+# ---------------------------------------------------------------------------
+
+
+def _build_sunburst_tree(bt: pd.DataFrame, ranks: list[str]) -> dict[str, Any]:
+    """Build Plotly Sunburst-compatible tree from a (possibly filtered) bigtable.
+
+    Each node gets a unique ``id`` built from its full taxonomic path
+    (e.g. ``"Viruses/Uroviricota/Caudoviricetes"``).  Leaf values are the
+    summed RPM; if RPM is absent, the row count is used instead.
+
+    Parameters
+    ----------
+    bt:
+        A bigtable-like DataFrame (ideally already deduplicated by seq_id).
+    ranks:
+        Ordered list of column names forming the hierarchy, e.g.
+        ``["domain", "phylum", "class", "order", "family"]``.
+
+    Returns
+    -------
+    dict
+        ``{"ids": [...], "labels": [...], "parents": [...], "values": [...]}``
+    """
+    node_values: dict[str, float] = {}
+    node_parent: dict[str, str] = {}
+    node_colors: dict[str, str] = {}
+
+    has_rpm = "rpm" in bt.columns
+
+    for _, row in bt.iterrows():
+        rpm = _safe_float(row.get("rpm", 0)) if has_rpm else 1.0
+        family_color = get_family_color(infer_family_name(row))
+        path_parts: list[str] = []
+        for rank in ranks:
+            val = str(row.get(rank, "")).strip()
+            if val and val.lower() != "nan" and val != "":
+                path_parts.append(val)
+                node_id = "/".join(path_parts)
+                parent_id = "/".join(path_parts[:-1]) if len(path_parts) > 1 else ""
+                node_values[node_id] = node_values.get(node_id, 0.0) + rpm
+                node_parent[node_id] = parent_id
+                node_colors[node_id] = family_color
+
+    ids = list(node_values.keys())
+    labels = [nid.split("/")[-1] for nid in ids]
+    parents = [node_parent[nid] for nid in ids]
+    values = [round(node_values[nid], 2) for nid in ids]
+    colors = [node_colors.get(nid, "#CCCCCC") for nid in ids]
+
+    return {"ids": ids, "labels": labels, "parents": parents, "values": values, "colors": colors}
+
+
+def build_taxonomy_tree(bigtable: pd.DataFrame) -> dict[str, Any]:
+    """Build hierarchical taxonomy data for Plotly Sunburst / Treemap.
+
+    # @TASK T5.2.1 - Sunburst/Treemap taxonomy tree
+    # @SPEC docs/planning/05-design-system.md#Sunburst-Treemap
+
+    Returns a dict with keys:
+        - ``"all"``: combined all-sample tree
+        - ``"per_sample"``: ``{sample_name: tree_data}``
+
+    Each *tree_data* dict has Plotly-compatible arrays:
+    ``ids``, ``labels``, ``parents``, ``values`` (RPM sum).
+    """
+    ranks = ["domain", "phylum", "class", "order", "family"]
+
+    if bigtable.empty:
+        empty = {"ids": [], "labels": [], "parents": [], "values": []}
+        return {"all": empty, "per_sample": {}}
+
+    # Use unique contigs only (bigtable has per-sample rows)
+    unique_bt = (
+        bigtable.drop_duplicates(subset=["seq_id"])
+        if "seq_id" in bigtable.columns
+        else bigtable
+    )
+
+    has_genus = (
+        "genus" in bigtable.columns
+        and not bigtable["genus"].dropna().empty
+        and not bigtable["genus"].dropna().astype(str).str.strip().eq("").all()
+    )
+    if has_genus:
+        ranks.append("genus")
+    has_species = (
+        "species" in bigtable.columns
+        and not bigtable["species"].dropna().empty
+        and not bigtable["species"].dropna().astype(str).str.strip().eq("").all()
+    )
+    if has_species:
+        ranks.append("species")
+
+    # Filter to only ranks that actually exist in the DataFrame
+    available_ranks = [r for r in ranks if r in bigtable.columns]
+    if not available_ranks:
+        empty = {"ids": [], "labels": [], "parents": [], "values": []}
+        return {"all": empty, "per_sample": {}}
+
+    all_tree = _build_sunburst_tree(unique_bt, available_ranks)
+
+    per_sample: dict[str, dict] = {}
+    if "sample" in bigtable.columns:
+        for sample in sorted(bigtable["sample"].dropna().unique()):
+            sample_bt = bigtable[bigtable["sample"] == sample]
+            per_sample[str(sample)] = _build_sunburst_tree(sample_bt, available_ranks)
+
+    return {"all": all_tree, "per_sample": per_sample}
+
+
+def build_per_sample_sankey(bigtable: pd.DataFrame) -> dict[str, Any]:
+    """Build per-sample Sankey data by calling ``build_sankey`` per sample.
+
+    # @TASK T5.2.2 - Per-sample Sankey diagrams
+    # @SPEC docs/planning/05-design-system.md#Enhanced-Sankey
+
+    Returns a dict ``{sample_name: sankey_data}``.
+    """
+    if bigtable.empty or "sample" not in bigtable.columns:
+        return {}
+
+    result: dict[str, Any] = {}
+    for sample in sorted(bigtable["sample"].dropna().unique()):
+        sample_bt = bigtable[bigtable["sample"] == sample]
+        result[str(sample)] = build_sankey(sample_bt)
+
+    return result
+
+
+def build_search_rows_v2(bigtable: pd.DataFrame) -> list[dict[str, Any]]:
+    """Build enhanced search table data with all taxonomy ranks and per-sample metrics.
+
+    # @TASK T5.2.3 - Enhanced search table (v2)
+    # @SPEC docs/planning/05-design-system.md#Search-v2
+
+    Uses a pivot approach for efficient per-sample metric lookup instead of
+    repeated DataFrame filtering.
+
+    Returns a list of dicts, one per unique contig (seq_id).  Each dict
+    includes taxonomy fields plus a ``coverage_per_sample`` nested dict.
+    """
+    if bigtable.empty:
+        return []
+
+    # Deduplicate for contig-level attributes
+    unique_bt = (
+        bigtable.drop_duplicates(subset=["seq_id"])
+        if "seq_id" in bigtable.columns
+        else bigtable
+    )
+
+    samples = sorted(bigtable["sample"].dropna().unique()) if "sample" in bigtable.columns else []
+
+    # Pre-pivot per-sample metrics for efficient lookup
+    # Build: {seq_id: {sample: {coverage, rpm, breadth}}}
+    per_sample_lookup: dict[str, dict[str, dict[str, float]]] = {}
+    if "seq_id" in bigtable.columns and samples:
+        metric_cols = []
+        for col in ("coverage", "rpm", "breadth"):
+            if col in bigtable.columns:
+                metric_cols.append(col)
+
+        if metric_cols:
+            for _, row in bigtable.iterrows():
+                sid = str(row.get("seq_id", ""))
+                sample = str(row.get("sample", ""))
+                if not sid or not sample:
+                    continue
+                if sid not in per_sample_lookup:
+                    per_sample_lookup[sid] = {}
+                metrics: dict[str, float] = {}
+                for col in metric_cols:
+                    metrics[col] = round(_safe_float(row.get(col, 0)), 4)
+                per_sample_lookup[sid][sample] = metrics
+
+    rows: list[dict[str, Any]] = []
+    for _, row in unique_bt.iterrows():
+        seq_id = str(row.get("seq_id", ""))
+
+        # Build per-sample coverage dict from pre-built lookup
+        coverage_per_sample: dict[str, dict[str, float]] = {}
+        seq_lookup = per_sample_lookup.get(seq_id, {})
+        for s in samples:
+            coverage_per_sample[s] = seq_lookup.get(s, {
+                "coverage": 0.0, "rpm": 0.0, "breadth": 0.0,
+            })
+
+        entry: dict[str, Any] = {
+            "seq_id": seq_id,
+            "length": int(_safe_float(row.get("length", 0))),
+            "family": _safe_str(row.get("family", "")),
+            "genus": _safe_str(row.get("genus", "")),
+            "species": _safe_str(row.get("species", "")),
+            "family_color": get_family_color(row.get("family", "")),
+            "detection_method": _safe_str(row.get("detection_method", "")),
+            "detection_score": round(_safe_float(row.get("detection_score", 0)), 3),
+            "detection_confidence": _safe_str(row.get("detection_confidence", "")),
+            "best_hit": _safe_str(row.get("target", "")),
+            "pident": _safe_str(row.get("pident", "")),
+            "taxonomy": _safe_str(row.get("taxonomy", "")),
+            "coverage_per_sample": coverage_per_sample,
+        }
+        rows.append(entry)
+
+    return rows
+
+
+def _safe_str(value: Any) -> str:
+    """Convert a value to a non-NaN string, returning empty string on failure."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return ""
+    s = str(value).strip()
+    return "" if s.lower() == "nan" else s
+
+
+def build_filter_options(bigtable: pd.DataFrame) -> dict[str, Any]:
+    """Build dropdown filter option lists for the dashboard UI.
+
+    # @TASK T5.2.4 - Dashboard filter options
+    # @SPEC docs/planning/05-design-system.md#Filters
+
+    Returns a dict with sorted unique values for each filterable dimension.
+    """
+    if bigtable.empty:
+        return {
+            "samples": [],
+            "families": [],
+            "genera": [],
+            "detection_methods": [],
+            "confidence_tiers": ["high", "medium", "low"],
+        }
+
+    samples = (
+        sorted(bigtable["sample"].dropna().unique().tolist())
+        if "sample" in bigtable.columns else []
+    )
+
+    families = []
+    if "family" in bigtable.columns:
+        families = sorted([
+            f for f in bigtable["family"].dropna().unique()
+            if str(f).strip() and str(f).strip().lower() not in ("unclassified", "nan")
+        ])
+
+    genera = []
+    if "genus" in bigtable.columns:
+        genera = sorted([
+            str(g) for g in bigtable["genus"].dropna().unique()
+            if str(g).strip() and str(g).strip().lower() != "nan"
+        ])
+
+    detection_methods = (
+        sorted(bigtable["detection_method"].dropna().unique().tolist())
+        if "detection_method" in bigtable.columns else []
+    )
+
+    return {
+        "samples": [str(s) for s in samples],
+        "families": [str(f) for f in families],
+        "genera": genera,
+        "detection_methods": [str(d) for d in detection_methods],
+        "confidence_tiers": ["high", "medium", "low"],
+    }
+
+
+def build_comparison_data(bigtable: pd.DataFrame) -> dict[str, Any]:
+    """Build sample comparison payload for family- and contig-level views."""
+    if bigtable.empty or "sample" not in bigtable.columns:
+        return {"family": [], "contig": [], "samples": []}
+
+    samples = sorted(bigtable["sample"].dropna().unique())
+    unique_bt = bigtable.drop_duplicates(subset=["seq_id"]) if "seq_id" in bigtable.columns else bigtable
+
+    family_data: list[dict[str, Any]] = []
+    if "family" in unique_bt.columns:
+        for family in sorted(unique_bt["family"].dropna().astype(str).unique()):
+            family_name = _safe_str(family) or "Unclassified"
+            row: dict[str, Any] = {
+                "name": family_name,
+                "type": "family",
+                "family": family_name,
+                "color": get_family_color(family_name),
+                "count": int(len(unique_bt[unique_bt["family"] == family])),
+            }
+            for sample in samples:
+                sample_bt = bigtable[
+                    (bigtable["family"] == family) & (bigtable["sample"] == sample)
+                ]
+                row[f"{sample}_rpm"] = round(sample_bt["rpm"].sum(), 2) if "rpm" in sample_bt.columns else 0.0
+                row[f"{sample}_count"] = int(len(sample_bt))
+            if len(samples) == 2:
+                v1 = row.get(f"{samples[0]}_rpm", 0)
+                v2 = row.get(f"{samples[1]}_rpm", 0)
+                row["log2fc"] = round(math.log2(v2 / v1), 2) if v1 > 0 and v2 > 0 else None
+            family_data.append(row)
+
+    contig_data: list[dict[str, Any]] = []
+    if "seq_id" in unique_bt.columns:
+        for seq_id in unique_bt["seq_id"].dropna().astype(str).unique():
+            contig_rows = bigtable[bigtable["seq_id"] == seq_id]
+            if contig_rows.empty:
+                continue
+            first = contig_rows.iloc[0]
+            family_name = infer_family_name(first)
+            row = {
+                "name": seq_id,
+                "type": "contig",
+                "family": family_name,
+                "color": get_family_color(family_name),
+                "length": int(_safe_float(first.get("length", 0))),
+            }
+            for sample in samples:
+                sr = contig_rows[contig_rows["sample"] == sample]
+                row[f"{sample}_rpm"] = round(_safe_float(sr["rpm"].iloc[0]), 2) if len(sr) > 0 and "rpm" in sr.columns else 0.0
+                row[f"{sample}_cov"] = round(_safe_float(sr["coverage"].iloc[0]), 2) if len(sr) > 0 and "coverage" in sr.columns else 0.0
+            if len(samples) == 2:
+                v1 = row.get(f"{samples[0]}_rpm", 0)
+                v2 = row.get(f"{samples[1]}_rpm", 0)
+                row["log2fc"] = round(math.log2(v2 / v1), 2) if v1 > 0 and v2 > 0 else None
+            contig_data.append(row)
+
+    return {"family": family_data, "contig": contig_data, "samples": [str(s) for s in samples]}
+
+
+def load_contig_sequences(contigs_path: Path | None, bigtable: pd.DataFrame, top_n: int = 200) -> dict[str, str]:
+    """Load the top-N contig sequences ranked by total RPM from a FASTA file."""
+    if not contigs_path or not contigs_path.exists() or bigtable.empty or "seq_id" not in bigtable.columns:
+        return {}
+
+    if "rpm" in bigtable.columns:
+        top_ids = (
+            bigtable.groupby("seq_id", as_index=False)["rpm"]
+            .sum()
+            .sort_values("rpm", ascending=False)["seq_id"]
+            .head(top_n)
+            .astype(str)
+            .tolist()
+        )
+    else:
+        top_ids = (
+            bigtable["seq_id"].dropna().astype(str).drop_duplicates().head(top_n).tolist()
+        )
+    top_id_set = set(top_ids)
+    if not top_id_set:
+        return {}
+
+    sequences: dict[str, str] = {}
+    current_id: str | None = None
+    current_seq: list[str] = []
+
+    with contigs_path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith(">"):
+                if current_id in top_id_set and current_seq:
+                    sequences[current_id] = "".join(current_seq)
+                    if len(sequences) >= len(top_id_set):
+                        break
+                current_id = line[1:].split()[0]
+                current_seq = []
+            elif current_id in top_id_set:
+                current_seq.append(line)
+
+    if current_id in top_id_set and current_seq and current_id not in sequences:
+        sequences[current_id] = "".join(current_seq)
+
+    ordered_sequences: dict[str, str] = {}
+    for seq_id in top_ids:
+        if seq_id in sequences:
+            ordered_sequences[seq_id] = sequences[seq_id]
+    return ordered_sequences
+
+
+def _sanitize_for_json(obj: Any) -> Any:
+    """Recursively replace NaN / Infinity with None for JSON serialization.
+
+    Python's ``json.dumps`` outputs ``NaN`` / ``Infinity`` literals which
+    are invalid JSON.  This helper walks a nested structure and converts
+    them to ``None`` (which becomes ``null`` in JSON).
+    """
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    # Handle numpy types
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        v = float(obj)
+        return None if (math.isnan(v) or math.isinf(v)) else v
+    if isinstance(obj, np.ndarray):
+        return _sanitize_for_json(obj.tolist())
+    return obj
+
+
+# ---------------------------------------------------------------------------
 # Main render function
 # ---------------------------------------------------------------------------
 
@@ -539,9 +1028,11 @@ def build_coverage_data(
             "z": [], "raw_values": [], "labels": [],
         }
 
-    viral_contigs = bigtable["seq_id"].tolist()
-    families = bigtable.set_index("seq_id")["family"].to_dict() if "family" in bigtable.columns else {}
-    lengths = bigtable.set_index("seq_id")["length"].to_dict() if "length" in bigtable.columns else {}
+    # Use unique contigs only (bigtable may have one row per seq_id x sample)
+    unique_bt = bigtable.drop_duplicates(subset=["seq_id"])
+    viral_contigs = unique_bt["seq_id"].tolist()
+    families = unique_bt.set_index("seq_id")["family"].to_dict() if "family" in unique_bt.columns else {}
+    lengths = unique_bt.set_index("seq_id")["length"].to_dict() if "length" in unique_bt.columns else {}
 
     sample_names = sorted(coverage_data.keys())
 
@@ -597,6 +1088,7 @@ def build_dashboard_data(
     pcoa: pd.DataFrame,
     host_stats: pd.DataFrame | None = None,
     coverage_data: dict[str, pd.DataFrame] | None = None,
+    contig_sequences: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Assemble the full data dict injected as ``window.__DASHBOARD_DATA__``.
 
@@ -620,19 +1112,40 @@ def build_dashboard_data(
         summary["n_samples"] = len(actual_samples)
         summary["sample_names"] = actual_samples
 
+    samples_list = actual_samples if actual_samples else (
+        sorted(bigtable["sample"].dropna().unique().tolist())
+        if not bigtable.empty and "sample" in bigtable.columns else []
+    )
+
     data = {
         "summary": summary,
+        # Existing keys (backward-compatible)
         "sankey": build_sankey(bigtable),
         "heatmap": build_heatmap(matrix),
         "barplot": build_barplot(matrix),
         "pcoa": build_pcoa_data(pcoa, beta),
         "alpha": build_alpha_data(alpha),
         "search_rows": build_search_rows(bigtable),
-        "samples": actual_samples if actual_samples else (
-            list(bigtable["sample"].dropna().unique())
-            if not bigtable.empty and "sample" in bigtable.columns else []
-        ),
+        "samples": samples_list,
+        "ictv_family_colors": dict(sorted(ICTV_FAMILY_COLORS.items())),
     }
+
+    # @TASK T5.2 - Dashboard v2 extended data structures
+    # Sankey: rename existing to sankey_all, add per-sample
+    data["sankey_all"] = data["sankey"]  # alias (keep "sankey" for backward compat)
+    data["sankey_per_sample"] = build_per_sample_sankey(bigtable)
+
+    # Taxonomy tree for Sunburst / Treemap
+    data["taxonomy_tree"] = build_taxonomy_tree(bigtable)
+
+    # Enhanced search table (v2)
+    data["search_rows_v2"] = build_search_rows_v2(bigtable)
+
+    # Filter dropdown options
+    data["filter_options"] = build_filter_options(bigtable)
+    data["comparison"] = build_comparison_data(bigtable)
+    data["contig_sequences"] = contig_sequences or {}
+
     # @TASK T1.2 - Host removal statistics in dashboard
     if host_stats is not None:
         data["host_removal"] = build_host_removal_data(host_stats)
@@ -701,6 +1214,31 @@ def load_host_stats_dir(host_stats_dir: Path) -> pd.DataFrame:
     return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
 
 
+def build_inline_figures(figures_dir: Path | None) -> list[dict[str, str]]:
+    """Load PNG figures from *figures_dir* and encode as base64 data URIs.
+
+    Returns a list of dicts: [{"name": "heatmap.png", "data_uri": "data:image/png;base64,..."}]
+    """
+    import base64
+
+    result = []
+    if not figures_dir or not figures_dir.exists():
+        return result
+    for f in sorted(figures_dir.glob("*.png")):
+        try:
+            b64 = base64.b64encode(f.read_bytes()).decode("ascii")
+            label = f.stem.replace("_", " ").title()
+            result.append({
+                "name": f.name,
+                "label": label,
+                "data_uri": f"data:image/png;base64,{b64}",
+            })
+            logger.info("Embedded figure: %s (%d KB)", f.name, f.stat().st_size // 1024)
+        except Exception as exc:
+            logger.warning("Failed to embed figure %s: %s", f.name, exc)
+    return result
+
+
 def render_dashboard(
     data: dict[str, Any],
     output_path: Path,
@@ -732,7 +1270,8 @@ def render_dashboard(
 
     # Custom tojson filter that handles NaN / Infinity safely
     def _tojson_filter(value: Any) -> str:
-        return json.dumps(value, ensure_ascii=False, default=str)
+        sanitized = _sanitize_for_json(value)
+        return json.dumps(sanitized, ensure_ascii=False, default=str)
 
     env.filters["tojson"] = _tojson_filter
 
@@ -820,6 +1359,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Directory containing *.host_removal_stats.txt files",
     )
     parser.add_argument(
+        "--figures-dir",
+        metavar="DIR",
+        default=None,
+        help="Directory containing result figure PNGs to embed as inline images",
+    )
+    parser.add_argument(
+        "--contigs",
+        metavar="FASTA",
+        default=None,
+        help="Path to the co-assembly contig FASTA for embedding top contig sequences",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
@@ -870,7 +1421,27 @@ def main(argv: list[str] | None = None) -> int:
             if coverage_data:
                 logger.info("Loaded coverage for %d samples", len(coverage_data))
 
-        data = build_dashboard_data(bigtable, matrix, alpha, beta, pcoa, host_stats, coverage_data)
+        contig_sequences = {}
+        if args.contigs:
+            contig_sequences = load_contig_sequences(Path(args.contigs), bigtable)
+            if contig_sequences:
+                logger.info("Embedded %d contig sequences from %s", len(contig_sequences), args.contigs)
+
+        data = build_dashboard_data(
+            bigtable,
+            matrix,
+            alpha,
+            beta,
+            pcoa,
+            host_stats,
+            coverage_data,
+            contig_sequences,
+        )
+
+        # Embed result figures as inline base64 images
+        figures_dir = Path(args.figures_dir) if args.figures_dir else None
+        data["inline_figures"] = build_inline_figures(figures_dir)
+
         render_dashboard(data, Path(args.output))
     except Exception:
         logger.exception("Dashboard generation failed")

@@ -1,10 +1,11 @@
-// @TASK T3.3 - Merge geNomad and Diamond detection results
+// Merge geNomad and Diamond detection results
+// @TASK T3.3 - Detection result merger
 // @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
-// @SPEC docs/planning/04-database-design.md#4.1-bigtable
 
 process MERGE_DETECTION {
     tag "$meta.id"
     label 'process_merge'
+    publishDir "${params.outdir}/detection", mode: 'copy'
 
     input:
     tuple val(meta), path(genomad_parsed), path(diamond_parsed)

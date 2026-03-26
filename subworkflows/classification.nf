@@ -1,3 +1,5 @@
+// @TASK T4 - Classification subworkflow
+// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
 // Classification subworkflow: MMSEQS -> TAXONKIT -> COVERM_PERSAMPLE -> MERGE_RESULTS -> DIVERSITY
 // MMseqs2 and TaxonKit run once on co-assembly contigs
 // CoverM runs per-sample (each sample's reads mapped to co-assembly contigs)
@@ -16,6 +18,7 @@ workflow CLASSIFICATION {
     ch_detection       // tuple val(meta), path(detection_results) - meta.id='coassembly'
     ch_sample_map      // path(sample_map.tsv)
     ch_ictv_vmr        // path(ictv_vmr.tsv)
+    ch_mmseqs_db       // path(mmseqs_db) - MMseqs2 viral nucleotide DB directory
 
     main:
     // Step 1: Wrap co-assembly contigs with meta for module compatibility
@@ -24,7 +27,7 @@ workflow CLASSIFICATION {
     }
 
     // Step 2: Taxonomic assignment with MMseqs2 (runs once on co-assembly)
-    MMSEQS_TAXONOMY( ch_contigs_meta )
+    MMSEQS_TAXONOMY( ch_contigs_meta, ch_mmseqs_db )
 
     // Step 3: Lineage reformatting with TaxonKit (runs once)
     TAXONKIT_REFORMAT( MMSEQS_TAXONOMY.out.taxonomy )

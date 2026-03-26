@@ -30,8 +30,16 @@ from typing import Any
 
 SCHEMA_VERSION = "1.0"
 
+EXCLUSION_KINGDOMS: dict[str, dict[str, int | str]] = {
+    "bacteria": {"taxid": 2, "name": "Bacteria"},
+    "archaea": {"taxid": 2157, "name": "Archaea"},
+    "fungi": {"taxid": 4751, "name": "Fungi"},
+    "plant": {"taxid": 33090, "name": "Viridiplantae"},
+    "insect": {"taxid": 6960, "name": "Insecta"},
+}
+
 # @TASK T0.3 - DB source URLs
-DB_SOURCES: dict[str, dict[str, str]] = {
+DB_SOURCES: dict[str, dict[str, Any]] = {
     "viral_protein": {
         "source": "UniRef90 viral subset",
         "url": "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref90/uniref90.fasta.gz",
@@ -52,6 +60,23 @@ DB_SOURCES: dict[str, dict[str, str]] = {
         "url": "https://zenodo.org/records/8339387/files/genomad_db_v1.7.tar.gz",
         "version": "1.7",
         "description": "geNomad ML model database",
+    },
+    "exclusion_db": {
+        "source": "UniProt Swiss-Prot reviewed proteins",
+        "fasta_url": (
+            "https://ftp.uniprot.org/pub/databases/uniprot/current_release/"
+            "knowledgebase/complete/uniprot_sprot.fasta.gz"
+        ),
+        "dat_url": (
+            "https://ftp.uniprot.org/pub/databases/uniprot/current_release/"
+            "knowledgebase/complete/uniprot_sprot.dat.gz"
+        ),
+        "description": (
+            "Curated multi-kingdom protein DB for non-viral contig exclusion; "
+            "query-time filtering uses kingdom taxon definitions"
+        ),
+        "strategy": "single_swissprot_db_with_taxon_filters",
+        "kingdoms": EXCLUSION_KINGDOMS,
     },
     "taxonomy": {
         "ncbi_url": "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz",
@@ -78,7 +103,7 @@ DB_SOURCES: dict[str, dict[str, str]] = {
     },
 }
 
-VALID_COMPONENTS = ("all", "protein", "nucleotide", "genomad", "taxonomy", "host")
+VALID_COMPONENTS = ("all", "protein", "nucleotide", "genomad", "taxonomy", "host", "exclusion")
 VALID_HOSTS = ("human", "mouse", "insect")
 
 # Logging setup
@@ -240,6 +265,56 @@ def _save_version(db_dir: Path, data: dict[str, Any]) -> None:
     with open(vfile, "w") as fh:
         json.dump(data, fh, indent=2, ensure_ascii=False)
     logger.info("VERSION.json updated: %s", vfile)
+
+
+def _build_db_config(version_data: dict[str, Any]) -> dict[str, Any]:
+    """Build the central DB configuration payload."""
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "updated_at": _now_iso(),
+        "layout": {
+            "exclusion_db": "exclusion_db/",
+            "viral_protein": "viral_protein/",
+            "viral_nucleotide": "viral_nucleotide/",
+            "genomad_db": "genomad_db/",
+            "host_genomes": "host_genomes/",
+            "taxonomy": "taxonomy/",
+        },
+        "pipeline": {
+            "tier1": {
+                "component": "exclusion_db",
+                "strategy": DB_SOURCES["exclusion_db"]["strategy"],
+                "diamond_db": "exclusion_db/swissprot.dmnd",
+                "taxid_map": "exclusion_db/swissprot.taxids.tsv",
+                "target_kingdoms": DB_SOURCES["exclusion_db"]["kingdoms"],
+            },
+            "tier2": {
+                "protein_component": "viral_protein",
+                "nucleotide_component": "viral_nucleotide",
+            },
+        },
+        "update_schedule": {
+            "taxonomy": {"interval_days": 30, "priority": "high"},
+            "exclusion_db": {"interval_days": 90, "priority": "high"},
+            "viral_protein": {"interval_days": 90, "priority": "medium"},
+            "viral_nucleotide": {"interval_days": 90, "priority": "medium"},
+            "genomad_db": {"interval_days": 180, "priority": "medium"},
+            "host_genomes": {"interval_days": 180, "priority": "low"},
+        },
+        "versions": version_data.get("databases", {}),
+    }
+
+
+def _save_db_config(db_dir: Path, version_data: dict[str, Any], *, dry_run: bool = False) -> None:
+    """Write the central database configuration file."""
+    cfg = db_dir / "db_config.json"
+    if dry_run:
+        logger.info("db_config.json would be updated: %s", cfg)
+        return
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    with open(cfg, "w") as fh:
+        json.dump(_build_db_config(version_data), fh, indent=2, ensure_ascii=False)
+    logger.info("db_config.json updated: %s", cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +499,106 @@ def download_genomad_db(
     }
 
 
+def _extract_swissprot_taxids(
+    dat_gz: Path,
+    out_tsv: Path,
+    *,
+    dry_run: bool = False,
+) -> int:
+    """Extract accession to NCBI taxid mapping from UniProt DAT."""
+    import gzip
+
+    logger.info("Extracting Swiss-Prot accession -> taxid map: %s", out_tsv)
+    if dry_run:
+        logger.info("  [DRY-RUN] Skipped.")
+        return 0
+
+    count = 0
+    accession = ""
+    taxid = ""
+    with gzip.open(dat_gz, "rt") as in_fh, open(out_tsv, "w") as out_fh:
+        out_fh.write("accession\ttaxid\n")
+        for line in in_fh:
+            if line.startswith("AC   "):
+                accession = line[5:].split(";")[0].strip()
+            elif line.startswith("OX   NCBI_TaxID="):
+                taxid = line.split("NCBI_TaxID=", 1)[1].split(";", 1)[0].strip()
+            elif line.startswith("//"):
+                if accession and taxid:
+                    out_fh.write(f"{accession}\t{taxid}\n")
+                    count += 1
+                accession = ""
+                taxid = ""
+    logger.info("  Extracted taxid mappings: %d", count)
+    return count
+
+
+def download_exclusion_db(
+    db_dir: Path,
+    *,
+    threads: int = 4,
+    dry_run: bool = False,
+    kingdoms: list[str] | None = None,
+) -> dict[str, Any]:
+    """Download and build a multi-kingdom exclusion Diamond DB.
+
+    Uses reviewed UniProt Swiss-Prot proteins as a compact exclusion DB and
+    records target kingdom taxids for query-time filtering.
+    """
+    out = db_dir / "exclusion_db"
+    fasta = out / "swissprot.fasta.gz"
+    dat_gz = out / "swissprot.dat.gz"
+    dmnd = out / "swissprot.dmnd"
+    taxids_tsv = out / "swissprot.taxids.tsv"
+
+    logger.info("=== Exclusion Database (Diamond) ===")
+    logger.info("  Target directory: %s", out)
+
+    selected = kingdoms or list(EXCLUSION_KINGDOMS)
+    invalid = [kingdom for kingdom in selected if kingdom not in EXCLUSION_KINGDOMS]
+    if invalid:
+        logger.error("Unknown exclusion kingdoms: %s", ", ".join(sorted(invalid)))
+        sys.exit(1)
+    logger.info("  Target kingdoms: %s", ", ".join(selected))
+
+    if not dry_run:
+        out.mkdir(parents=True, exist_ok=True)
+
+    src = DB_SOURCES["exclusion_db"]
+    _download_file(src["fasta_url"], fasta, dry_run=dry_run)
+    _download_file(src["dat_url"], dat_gz, dry_run=dry_run)
+
+    if not _which("diamond"):
+        logger.warning("diamond not found on PATH; skipping makedb")
+    else:
+        _run(
+            ["diamond", "makedb", "--in", str(fasta), "-d", str(dmnd), "-p", str(threads)],
+            dry_run=dry_run,
+            description="Building Swiss-Prot exclusion Diamond DB",
+        )
+
+    taxid_record_count = _extract_swissprot_taxids(dat_gz, taxids_tsv, dry_run=dry_run)
+
+    fasta_record_count = 0
+    if not dry_run and fasta.exists():
+        logger.info("Counting Swiss-Prot FASTA records (this may take a while)...")
+        fasta_record_count = _count_fasta_records(fasta)
+        logger.info("  Records: %d", fasta_record_count)
+
+    return {
+        "source": src["source"],
+        "strategy": src["strategy"],
+        "version": datetime.date.today().strftime("%Y_%m"),
+        "fasta_url": src["fasta_url"],
+        "taxonomy_map_url": src["dat_url"],
+        "downloaded_at": _today(),
+        "record_count": fasta_record_count,
+        "taxid_record_count": taxid_record_count,
+        "format": "diamond",
+        "target_kingdoms": {name: EXCLUSION_KINGDOMS[name] for name in selected},
+    }
+
+
 def download_taxonomy(
     db_dir: Path,
     *,
@@ -594,7 +769,7 @@ def _resolve_components(components: str) -> list[str]:
         List of individual component names.
     """
     if components == "all":
-        return ["protein", "nucleotide", "genomad", "taxonomy", "host"]
+        return ["protein", "nucleotide", "genomad", "taxonomy", "host", "exclusion"]
     return [c.strip() for c in components.split(",")]
 
 
@@ -647,6 +822,11 @@ def install(
         if not dry_run:
             version_data["databases"]["taxonomy"] = meta
 
+    if "exclusion" in active:
+        meta = download_exclusion_db(db_dir, threads=threads, dry_run=dry_run)
+        if not dry_run:
+            version_data["databases"]["exclusion_db"] = meta
+
     if "host" in active:
         meta = download_host_genome(db_dir, host=host, threads=threads, dry_run=dry_run)
         if not dry_run:
@@ -654,6 +834,8 @@ def install(
 
     # Contaminants are always set up
     download_contaminants(db_dir, dry_run=dry_run)
+
+    _save_db_config(db_dir, version_data, dry_run=dry_run)
 
     if not dry_run:
         _save_version(db_dir, version_data)
@@ -687,6 +869,9 @@ def build_parser() -> argparse.ArgumentParser:
             "\n"
             "  # Install only taxonomy and nucleotide DBs\n"
             "  python install_databases.py --db-dir /data/db --components taxonomy,nucleotide\n"
+            "\n"
+            "  # Install exclusion DB only\n"
+            "  python install_databases.py --db-dir /data/db --components exclusion\n"
             "\n"
             "  # Install with mouse host genome\n"
             "  python install_databases.py --db-dir /data/db --host mouse\n"

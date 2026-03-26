@@ -1,3 +1,5 @@
+// @TASK T1 - Preprocessing subworkflow
+// @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
 // Preprocessing subworkflow: (FASTP|BBDUK) -> FastQC -> HOST_INDEX -> HOST_REMOVAL
 
 include { FASTP        } from '../modules/local/fastp'

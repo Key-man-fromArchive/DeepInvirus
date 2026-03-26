@@ -62,6 +62,7 @@ KNOWN_COMPONENTS: list[str] = [
     "viral_nucleotide",
     "genomad_db",
     "taxonomy",
+    "exclusion_db",
 ]
 
 # Human-readable labels for the DataTable
@@ -70,6 +71,7 @@ COMPONENT_LABELS: dict[str, str] = {
     "viral_nucleotide": "Viral Nucleotide",
     "genomad_db": "geNomad DB",
     "taxonomy": "NCBI Taxonomy",
+    "exclusion_db": "Exclusion DB (SwissProt)",
 }
 
 # Default DB directory (relative to project root)
@@ -396,6 +398,7 @@ class DbScreen(Screen):
                 "Viral Nucleotide": "nucleotide",
                 "geNomad DB": "genomad",
                 "NCBI Taxonomy": "taxonomy",
+                "Exclusion DB (SwissProt)": "exclusion",
             }
 
             install_key = comp_map.get(component_name)

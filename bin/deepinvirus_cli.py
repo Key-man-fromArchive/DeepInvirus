@@ -23,6 +23,7 @@ Provides both TUI (interactive) and CLI (batch) modes:
 
 from __future__ import annotations
 
+import datetime
 import json
 import subprocess
 import sys
@@ -72,8 +73,8 @@ def cli(ctx):
 
 @cli.command()
 @click.option("--reads", required=True, help="Input FASTQ directory or file (glob pattern).")
-@click.option("--host", default="human", help="Host genome name for read decontamination.")
-@click.option("--outdir", default="./results", help="Output directory.")
+@click.option("--host", default="none", help="Host genome name for read decontamination (use 'none' to skip).")
+@click.option("--outdir", default=None, help="Output directory. Auto-generates timestamped name if not specified.")
 @click.option(
     "--assembler",
     default="megahit",
@@ -108,15 +109,36 @@ def cli(ctx):
     type=click.Path(),
     help="Custom Nextflow work directory path.",
 )
-def run(reads, host, outdir, assembler, search, skip_ml, threads, db_dir, resume, use_ramdisk, ramdisk_size, work_dir):
+@click.option(
+    "--checkv-db",
+    default=None,
+    type=click.Path(),
+    help="CheckV database path for genome quality assessment (optional).",
+)
+@click.option(
+    "--exclusion-db",
+    default=None,
+    type=click.Path(),
+    help="SwissProt Diamond DB for non-viral contig exclusion (optional).",
+)
+def run(reads, host, outdir, assembler, search, skip_ml, threads, db_dir, resume, use_ramdisk, ramdisk_size, work_dir, checkv_db, exclusion_db):
     """Run the DeepInvirus analysis pipeline.
 
     Launches the Nextflow pipeline (main.nf) with the specified parameters.
     Use --use-ramdisk for massive I/O speedup when data is on NFS.
+
+    If --outdir is not specified, a timestamped directory name is generated
+    automatically (e.g., ./20260325_143022_deepinvirus_results).
     """
     from ramdisk_manager import RamdiskManager
 
     ramdisk = None
+
+    # Auto-generate timestamped output directory if not specified
+    if outdir is None:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        outdir = f"./{timestamp}_deepinvirus_results"
+        click.echo(f"Output directory (auto): {outdir}")
 
     # Build Nextflow command
     cmd = ["nextflow", "run", str(_BIN_DIR.parent / "main.nf")]
@@ -132,6 +154,10 @@ def run(reads, host, outdir, assembler, search, skip_ml, threads, db_dir, resume
         cmd += ["--threads", str(threads)]
     if db_dir is not None:
         cmd += ["--db_dir", db_dir]
+    if checkv_db is not None:
+        cmd += ["--checkv_db", checkv_db]
+    if exclusion_db is not None:
+        cmd += ["--exclusion_db", exclusion_db]
 
     # @TASK T-RAMDISK - RAM disk or custom work directory
     if use_ramdisk:
