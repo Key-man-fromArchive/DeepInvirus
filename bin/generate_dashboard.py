@@ -877,46 +877,58 @@ def build_filter_options(bigtable: pd.DataFrame) -> dict[str, Any]:
 
 
 def build_comparison_data(bigtable: pd.DataFrame) -> dict[str, Any]:
-    """Build sample comparison payload for family- and contig-level views."""
+    """Build sample comparison payload for all taxonomy ranks + contig-level."""
     if bigtable.empty or "sample" not in bigtable.columns:
-        return {"family": [], "contig": [], "samples": []}
+        return {"ranks": {}, "contig": [], "samples": [], "available_ranks": []}
 
     samples = sorted(bigtable["sample"].dropna().unique())
-    unique_bt = bigtable.drop_duplicates(subset=["seq_id"]) if "seq_id" in bigtable.columns else bigtable
+    all_ranks = ["domain", "phylum", "class", "order", "family", "genus", "species"]
+    available_ranks = [r for r in all_ranks if r in bigtable.columns]
 
-    family_data: list[dict[str, Any]] = []
-    if "family" in unique_bt.columns:
-        for family in sorted(unique_bt["family"].dropna().astype(str).unique()):
-            family_name = _safe_str(family) or "Unclassified"
+    # Build per-rank aggregation
+    ranks_data: dict[str, list[dict[str, Any]]] = {}
+    for rank in available_ranks:
+        rank_rows: list[dict[str, Any]] = []
+        col = bigtable[rank].fillna("Unclassified").astype(str).str.strip().replace("", "Unclassified")
+        for taxon in sorted(col.unique()):
+            if taxon.lower() == "nan":
+                taxon = "Unclassified"
+            mask = col == taxon
             row: dict[str, Any] = {
-                "name": family_name,
-                "type": "family",
-                "family": family_name,
-                "color": get_family_color(family_name),
-                "count": int(len(unique_bt[unique_bt["family"] == family])),
+                "name": taxon,
+                "type": rank,
+                "color": get_family_color(taxon) if rank == "family" else "#4A90D9",
+                "count": int(bigtable.loc[mask].drop_duplicates("seq_id").shape[0] if "seq_id" in bigtable.columns else mask.sum()),
             }
             for sample in samples:
-                sample_bt = bigtable[
-                    (bigtable["family"] == family) & (bigtable["sample"] == sample)
-                ]
+                sample_mask = mask & (bigtable["sample"] == sample)
+                sample_bt = bigtable.loc[sample_mask]
                 row[f"{sample}_rpm"] = round(sample_bt["rpm"].sum(), 2) if "rpm" in sample_bt.columns else 0.0
                 row[f"{sample}_count"] = int(len(sample_bt))
             if len(samples) == 2:
                 v1 = row.get(f"{samples[0]}_rpm", 0)
                 v2 = row.get(f"{samples[1]}_rpm", 0)
                 row["log2fc"] = round(math.log2(v2 / v1), 2) if v1 > 0 and v2 > 0 else None
-            family_data.append(row)
+            rank_rows.append(row)
+        ranks_data[rank] = rank_rows
 
+    # Contig-level (top 200 by RPM to avoid huge payload)
     contig_data: list[dict[str, Any]] = []
-    if "seq_id" in unique_bt.columns:
-        for seq_id in unique_bt["seq_id"].dropna().astype(str).unique():
+    if "seq_id" in bigtable.columns:
+        top_contigs = (
+            bigtable.groupby("seq_id", as_index=False)["rpm"].sum()
+            .sort_values("rpm", ascending=False)
+            .head(200)["seq_id"].tolist()
+        ) if "rpm" in bigtable.columns else bigtable["seq_id"].unique()[:200].tolist()
+
+        for seq_id in top_contigs:
             contig_rows = bigtable[bigtable["seq_id"] == seq_id]
             if contig_rows.empty:
                 continue
             first = contig_rows.iloc[0]
             family_name = infer_family_name(first)
             row = {
-                "name": seq_id,
+                "name": str(seq_id),
                 "type": "contig",
                 "family": family_name,
                 "color": get_family_color(family_name),
@@ -932,7 +944,14 @@ def build_comparison_data(bigtable: pd.DataFrame) -> dict[str, Any]:
                 row["log2fc"] = round(math.log2(v2 / v1), 2) if v1 > 0 and v2 > 0 else None
             contig_data.append(row)
 
-    return {"family": family_data, "contig": contig_data, "samples": [str(s) for s in samples]}
+    # Backward compat: "family" key aliases ranks_data["family"]
+    return {
+        "ranks": ranks_data,
+        "family": ranks_data.get("family", []),
+        "contig": contig_data,
+        "samples": [str(s) for s in samples],
+        "available_ranks": available_ranks,
+    }
 
 
 def load_contig_sequences(contigs_path: Path | None, bigtable: pd.DataFrame, top_n: int = 0) -> dict[str, str]:

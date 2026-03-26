@@ -360,8 +360,8 @@
     }
     .modal-backdrop.open { display: flex; }
     .modal-dialog {
-      width: min(760px, 100%);
-      max-height: 85vh;
+      width: min(920px, 100%);
+      max-height: 90vh;
       overflow: auto;
       background: #fff;
       border-radius: 10px;
@@ -716,8 +716,14 @@
     </p>
 
     <div class="comparison-controls">
-      <select id="comparison-level" aria-label="Comparison level">
-        <option value="family">By Family</option>
+      <select id="comparison-level" aria-label="Comparison level" onchange="renderComparisonView()">
+        <option value="domain">By Domain</option>
+        <option value="phylum">By Phylum</option>
+        <option value="class">By Class</option>
+        <option value="order">By Order</option>
+        <option value="family" selected>By Family</option>
+        <option value="genus">By Genus</option>
+        <option value="species">By Species</option>
         <option value="contig">By Contig</option>
       </select>
       <input type="text" id="comparison-search" placeholder="Filter by name..." aria-label="Filter comparison rows">
@@ -1270,7 +1276,11 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   function comparisonDataset() {
     var levelEl = document.getElementById("comparison-level");
     var level = levelEl ? levelEl.value : "family";
-    return (D.comparison && D.comparison[level]) || [];
+    if (!D.comparison) return [];
+    if (level === "contig") return D.comparison.contig || [];
+    // Try ranks dict first (new format), fallback to direct key (backward compat)
+    if (D.comparison.ranks && D.comparison.ranks[level]) return D.comparison.ranks[level];
+    return D.comparison[level] || [];
   }
 
   function comparisonSamples() {
@@ -1607,11 +1617,19 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     var gc = computeGcPercent(sequence);
     var samples = D.samples || [];
     var familyColor = row.family_color || getFamilyColor(row.family);
+
+    // Determine whether any sample has non-zero coverage for this contig
+    var hasCoverage = samples.length > 0 && samples.some(function (s) {
+      var m = ((row.coverage_per_sample || {})[s]) || {};
+      return (m.coverage || 0) > 0 || (m.rpm || 0) > 0;
+    });
+
     var sampleSummary = samples.map(function (sample) {
       var metrics = ((row.coverage_per_sample || {})[sample]) || {};
       return "<div class='modal-stat'><div class='modal-stat-label'>" + _esc(sample) +
         "</div><div class='modal-stat-value'>RPM " + Number(metrics.rpm || 0).toFixed(2) +
-        " / Cov " + Number(metrics.coverage || 0).toFixed(2) + "</div></div>";
+        " | Cov " + Number(metrics.coverage || 0).toFixed(2) + "x" +
+        " | Breadth " + Number((metrics.breadth || 0) * 100).toFixed(1) + "%</div></div>";
     }).join("");
 
     title.textContent = row.seq_id || "Contig details";
@@ -1626,11 +1644,87 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
       "</div>" +
       "<div class='modal-section-title'>Best Hit</div><div>" + _esc(row.best_hit || "N/A") + "</div>" +
       "<div class='modal-section-title'>Taxonomy</div><div>" + _esc(row.taxonomy || "N/A") + "</div>" +
-      (sampleSummary ? "<div class='modal-section-title'>Per-sample Metrics</div><div class='modal-summary'>" + sampleSummary + "</div>" : "") +
+      (hasCoverage
+        ? "<div class='modal-section-title'>Coverage by Sample</div>" +
+          "<div id='contig-coverage-chart' style='width:100%;height:260px;margin-bottom:4px'></div>" +
+          "<div class='modal-summary' style='margin-top:0'>" + sampleSummary + "</div>"
+        : (sampleSummary
+            ? "<div class='modal-section-title'>Per-sample Metrics</div><div class='modal-summary'>" + sampleSummary + "</div>"
+            : "")) +
       "<div class='modal-section-title'>Sequence</div>" +
       "<div class='sequence-toolbar'><span>" + (sequence ? (sequence.length + " nt embedded") : "Sequence unavailable in embedded dashboard") + "</span>" +
       "<button class='btn-export copy-sequence-btn' type='button' data-seq-id='" + _esc(row.seq_id) + "'>Copy Sequence</button></div>" +
       "<div class='sequence-box'>" + (sequence ? _esc(sequence) : "Sequence unavailable in embedded dashboard.") + "</div>";
+
+    // Plotly bar chart: per-sample mean coverage depth (primary) + RPM as overlay markers
+    if (hasCoverage && window.Plotly) {
+      var chartDiv = document.getElementById("contig-coverage-chart");
+      if (chartDiv) {
+        var _palette = [
+          "#4e79a7","#f28e2b","#e15759","#76b7b2","#59a14f",
+          "#edc948","#b07aa1","#ff9da7","#9c755f","#bab0ac"
+        ];
+        var _cov = [], _rpm = [], _breadth = [], _colors = [];
+        samples.forEach(function (s, i) {
+          var m = ((row.coverage_per_sample || {})[s]) || {};
+          _cov.push(Number(m.coverage || 0));
+          _rpm.push(Number(m.rpm || 0));
+          _breadth.push(Number(m.breadth || 0));
+          _colors.push(_palette[i % _palette.length]);
+        });
+
+        var _traceCov = {
+          type: "bar",
+          name: "Mean Depth (x)",
+          x: samples,
+          y: _cov,
+          marker: { color: _colors, opacity: 0.85 },
+          hovertemplate: "<b>%{x}</b><br>Mean Depth: %{y:.2f}x<br>RPM: %{customdata[0]:.2f}<br>Breadth: %{customdata[1]:.1%}<extra></extra>",
+          customdata: samples.map(function (_, i) { return [_rpm[i], _breadth[i]]; }),
+          yaxis: "y"
+        };
+        var _traceRpm = {
+          type: "scatter",
+          mode: "markers",
+          name: "RPM",
+          x: samples,
+          y: _rpm,
+          marker: { color: "#333", size: 7, symbol: "diamond" },
+          hovertemplate: "<b>%{x}</b><br>RPM: %{y:.2f}<extra></extra>",
+          yaxis: "y2",
+          visible: "legendonly"
+        };
+        var _layout = {
+          margin: { t: 18, r: 70, b: samples.length > 5 ? 90 : 55, l: 58 },
+          paper_bgcolor: "rgba(0,0,0,0)",
+          plot_bgcolor: "#f9f9f9",
+          font: { family: "inherit", size: 11 },
+          xaxis: {
+            tickangle: samples.length > 4 ? -35 : 0,
+            automargin: true,
+            gridcolor: "#e8e8e8",
+            linecolor: "#ccc"
+          },
+          yaxis: {
+            title: "Mean Depth (x)",
+            gridcolor: "#e8e8e8",
+            rangemode: "tozero",
+            linecolor: "#ccc"
+          },
+          yaxis2: {
+            title: "RPM",
+            overlaying: "y",
+            side: "right",
+            rangemode: "tozero",
+            showgrid: false
+          },
+          legend: { orientation: "h", y: -0.3, font: { size: 10 } },
+          bargap: 0.3
+        };
+        Plotly.react(chartDiv, [_traceCov, _traceRpm], _layout, { responsive: true, displayModeBar: false });
+      }
+    }
+
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
   }
