@@ -293,7 +293,7 @@ results/
 | `ictv_classification` | string | ICTV official classification |
 | `baltimore_group` | string | Baltimore classification group |
 | `count` | integer | Raw mapped read count |
-| `rpm` | float | Coverage-normalized relative abundance (contig coverage / total sample coverage × 1e6) |
+| `rpm` | float | Coverage-based relative abundance (contig depth / sum of depths × 1e6; not read-count RPM) |
 | `coverage` | float | Mean read depth (CoverM) |
 
 ### sample_taxon_matrix.tsv
@@ -799,7 +799,7 @@ results/
 | `ictv_classification` | string | ICTV 공식 분류 |
 | `baltimore_group` | string | Baltimore 분류 그룹 |
 | `count` | integer | 원시 매핑 리드 수 |
-| `rpm` | float | Coverage-normalized relative abundance (contig coverage / total sample coverage × 1e6) |
+| `rpm` | float | Coverage-based relative abundance (contig depth / sum of depths × 1e6; not read-count RPM) |
 | `coverage` | float | 평균 리드 깊이 (CoverM) |
 
 ### sample_taxon_matrix.tsv

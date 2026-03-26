@@ -6,8 +6,9 @@
 
 Co-assembly pipeline: detection/taxonomy run once on co-assembled contigs,
 while coverage is computed per-sample. This script creates one bigtable row
-per seq_id per sample using coverage rows and computes RPM as
-contig_coverage / total_sample_coverage * 1e6.
+per seq_id per sample using coverage rows and computes a coverage-based
+relative abundance metric (contig_depth / sum(depths) * 1e6; labelled
+'rpm' for column compatibility but NOT read-count RPM).
 
 Usage:
     python merge_results.py \\
@@ -268,7 +269,7 @@ def compute_detection_confidence(depth: float, breadth: float) -> str:
 
 def build_bigtable(
     detection: pd.DataFrame,
-    taxonomy: pd.DataFrame,
+    taxonomy: pd.DataFrame,  # NOTE: MMseqs2 best-hit; kept for API compat but lineage already provides ranks
     coverage: pd.DataFrame,
     lineage: pd.DataFrame,
     sample_map: pd.DataFrame,
@@ -282,7 +283,8 @@ def build_bigtable(
     3. Merge taxonomy and lineage for rank columns.
     4. Merge ICTV for classification/baltimore group.
     5. Attach sample metadata from sample_map (sample -> group).
-    6. Compute RPM = coverage / total_sample_coverage * 1e6.
+    6. Compute relative abundance: contig_depth / sum(depths) * 1e6
+       (coverage-based, not read-count RPM).
     """
     # --- Contig-level base from detection ---
     bt = detection.copy()
@@ -328,11 +330,12 @@ def build_bigtable(
         for col in rank_cols:
             if col in bt.columns:
                 col_empty = bt[col].isna() | (bt[col].astype(str).str.strip() == "")
-                if col_empty.all():
-                    bt[col] = bt["taxonomy"].apply(
+                if col_empty.any():
+                    fallback_vals = bt.loc[col_empty, "taxonomy"].apply(
                         lambda x, _c=col: parse_taxonomy_string_to_ranks(x).get(_c, "")
                     )
-                    filled = (bt[col].astype(str).str.strip() != "").sum()
+                    bt.loc[col_empty, col] = fallback_vals
+                    filled = (fallback_vals.astype(str).str.strip() != "").sum()
                     if filled > 0:
                         print(f"  Fallback: filled {filled} rows for '{col}' from taxonomy string", file=sys.stderr)
 
@@ -382,7 +385,7 @@ def build_bigtable(
     bt["coverage"] = pd.to_numeric(bt.get("coverage", 0.0), errors="coerce").fillna(0.0)
     bt["breadth"] = pd.to_numeric(bt.get("breadth", 0.0), errors="coerce").fillna(0.0)
 
-    # --- Coverage-normalized RPM ---
+    # --- Coverage-based relative abundance (depth / sum_depths * 1e6, not read-count RPM) ---
     sample_totals = bt.groupby("sample")["coverage"].transform("sum")
     bt["rpm"] = 0.0
     valid_mask = sample_totals > 0
