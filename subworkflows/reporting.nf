@@ -22,6 +22,7 @@ workflow REPORTING {
     ch_fastp_json        // tuple val(meta), path(json) - for MultiQC
     ch_fastqc_raw        // tuple val(meta), path(zip) - raw FastQC for MultiQC
     ch_fastqc_trimmed    // tuple val(meta), path(zip) - trimmed FastQC for MultiQC
+    ch_depth_files       // path(depth.tsv.gz[]) -- per-sample per-base depth
 
     main:
     // Step 1: Interactive HTML dashboard
@@ -50,7 +51,8 @@ workflow REPORTING {
         ch_contigs,
         ch_coverage_files,
         ch_host_stats_files,
-        REPORT.out.figures
+        REPORT.out.figures,
+        ch_depth_files
     )
 
     // Step 3: MultiQC aggregate QC report

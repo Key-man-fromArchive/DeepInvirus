@@ -2082,6 +2082,17 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         : (sampleSummary
             ? "<div class='modal-section-title'>Per-sample Metrics</div><div class='modal-summary'>" + sampleSummary + "</div>"
             : "")) +
+      // Per-base depth profile (if available)
+      (function() {
+        var dp = (D.depth_profiles || {})[row.seq_id];
+        if (!dp || Object.keys(dp).length === 0) return "";
+        return "<div class='modal-section-title'>Read Mapping Depth Profile" +
+          "<select id='depth-sample-picker' style='margin-left:12px;font-size:12px;padding:2px 6px;' onchange='window._renderDepthProfile(\"" + _esc(row.seq_id) + "\", this.value)'>" +
+          "<option value='__all__'>All Samples</option>" +
+          Object.keys(dp).map(function(s) { return "<option value='" + _esc(s) + "'>" + _esc(s) + "</option>"; }).join("") +
+          "</select></div>" +
+          "<div id='contig-depth-profile' style='width:100%;height:300px;'></div>";
+      })() +
       "<div class='modal-section-title'>Sequence</div>" +
       "<div class='sequence-toolbar'><span>" + (sequence ? (sequence.length + " nt embedded") : "Sequence unavailable in embedded dashboard") + "</span>" +
       "<button class='btn-export copy-sequence-btn' type='button' data-seq-id='" + _esc(row.seq_id) + "'>Copy Sequence</button></div>" +
@@ -2158,6 +2169,11 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
 
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
+
+    // Auto-render depth profile if available
+    if ((D.depth_profiles || {})[row.seq_id]) {
+      setTimeout(function() { _renderDepthProfile(row.seq_id, "__all__"); }, 200);
+    }
   }
 
   window.copyContigSequence = function (seqId) {
@@ -2369,11 +2385,59 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   // @TASK T5.2 - pre-load search_rows_v2
   if (D.search_rows_v2) { _allRows = D.search_rows_v2; _tableRows = D.search_rows_v2; }
 
+  // Per-base depth profile renderer
+  function _renderDepthProfile(seqId, sampleFilter) {
+    var chartDiv = document.getElementById("contig-depth-profile");
+    if (!chartDiv || !window.Plotly) return;
+    var dp = (D.depth_profiles || {})[seqId];
+    if (!dp) return;
+
+    var palette = ["#4e79a7","#f28e2b","#e15759","#76b7b2","#59a14f",
+                   "#edc948","#b07aa1","#ff9da7","#9c755f","#bab0ac"];
+    var traces = [];
+    var binSize = 10; // each point = 10bp average
+    var sampleKeys = sampleFilter === "__all__" ? Object.keys(dp) : [sampleFilter];
+
+    sampleKeys.forEach(function(sample, idx) {
+      var depths = dp[sample];
+      if (!depths || depths.length === 0) return;
+      var x = depths.map(function(_, i) { return i * binSize; });
+      traces.push({
+        type: "scatter",
+        mode: "lines",
+        name: sample,
+        x: x,
+        y: depths,
+        line: { width: 1.5, color: palette[idx % palette.length] },
+        fill: sampleKeys.length === 1 ? "tozeroy" : "none",
+        fillcolor: sampleKeys.length === 1 ? "rgba(78,121,167,0.15)" : undefined,
+        hovertemplate: "%{x}bp: %{y:.1f}x depth<extra>" + sample + "</extra>"
+      });
+    });
+
+    if (traces.length === 0) {
+      chartDiv.innerHTML = "<p style='color:#999;padding:20px'>No depth data for this sample.</p>";
+      return;
+    }
+
+    Plotly.react(chartDiv, traces, {
+      title: { text: "Per-base Read Depth — " + seqId, font: { size: 13 } },
+      xaxis: { title: "Position (bp)", zeroline: false },
+      yaxis: { title: "Read Depth", rangemode: "tozero" },
+      margin: { t: 40, r: 20, b: 50, l: 60 },
+      height: 300,
+      showlegend: sampleKeys.length > 1,
+      legend: { orientation: "h", y: -0.2 },
+      hovermode: "x unified"
+    }, { responsive: true });
+  }
+
   // Expose IIFE-scoped functions for inline onclick/onchange handlers
   window.resizeSankey = resizeSankey;
   window.openFigureViewer = openFigureViewer;
   window.closeFigureViewer = closeFigureViewer;
   window.renderComparisonView = renderComparisonView;
+  window._renderDepthProfile = _renderDepthProfile;
 
 })();
 </script>

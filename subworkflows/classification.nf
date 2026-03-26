@@ -61,4 +61,5 @@ workflow CLASSIFICATION {
     taxonomy      = MMSEQS_TAXONOMY.out.taxonomy     // tuple val(meta), path(taxonomy) - coassembly
     lineage       = TAXONKIT_REFORMAT.out.lineage    // tuple val(meta), path(lineage) - coassembly
     coverage      = COVERM_PERSAMPLE.out.coverage    // tuple val(meta), path(coverage) - per-sample
+    depth         = COVERM_PERSAMPLE.out.depth       // tuple val(meta), path(depth.tsv.gz) - per-base per-sample
 }

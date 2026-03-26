@@ -15,17 +15,19 @@ process DASHBOARD {
     path(coverage_files)    // per-sample *_coverage.tsv files
     path(host_stats_files)  // per-sample *.host_removal_stats.txt files
     path(figures_dir)       // figures/ directory from REPORT (contains PNGs)
+    path(depth_files)       // per-sample *_depth.tsv.gz files
 
     output:
     path("dashboard.html"), emit: html
 
     script:
     """
-    mkdir -p figures_in
-    # Copy PNGs from the REPORT figures directory into a local staging dir.
-    # The figures_dir input is a directory path (e.g., "figures/") containing
-    # PNGs produced by generate_report.py.
+    mkdir -p figures_in depth_dir
     cp ${figures_dir}/*.png figures_in/ 2>/dev/null || true
+    # Stage depth files into a directory for generate_dashboard.py
+    for f in *_depth.tsv.gz; do
+        [ -f "\$f" ] && cp "\$f" depth_dir/ 2>/dev/null || true
+    done
     generate_dashboard.py \\
         --bigtable ${bigtable} \\
         --matrix   ${matrix} \\
@@ -36,6 +38,7 @@ process DASHBOARD {
         --coverage-dir . \\
         --host-stats-dir . \\
         --figures-dir figures_in \\
+        --depth-dir depth_dir \\
         --output   dashboard.html
     """
 

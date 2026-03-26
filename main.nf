@@ -382,6 +382,12 @@ workflow {
         .collect()
         .ifEmpty( [] )
 
+    // Per-base depth files (for contig coverage depth visualization)
+    ch_depth_files = CLASSIFICATION.out.depth
+        .map { meta, f -> f }
+        .collect()
+        .ifEmpty( [] )
+
     // Host removal stats (strip meta, collect; empty when host='none')
     ch_host_stats = PREPROCESSING.out.host_stats
         .map { meta, f -> f }
@@ -401,7 +407,8 @@ workflow {
         ch_host_stats,
         PREPROCESSING.out.fastp_json,
         PREPROCESSING.out.fastqc_raw,
-        PREPROCESSING.out.fastqc_trimmed
+        PREPROCESSING.out.fastqc_trimmed,
+        ch_depth_files
     )
 }
 

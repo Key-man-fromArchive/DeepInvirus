@@ -1535,6 +1535,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Path to the co-assembly contig FASTA for embedding top contig sequences",
     )
     parser.add_argument(
+        "--depth-dir",
+        metavar="DIR",
+        default=None,
+        help="Directory containing per-sample *_depth.tsv.gz files (samtools depth output)",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
@@ -1601,6 +1607,58 @@ def main(argv: list[str] | None = None) -> int:
             coverage_data,
             contig_sequences,
         )
+
+        # Load per-base depth data (samtools depth) for coverage depth profiles
+        depth_data: dict[str, dict[str, list]] = {}  # {contig: {sample: [depths]}}
+        if args.depth_dir and Path(args.depth_dir).is_dir():
+            import gzip
+            depth_dir = Path(args.depth_dir)
+            # Get top contigs by RPM (limit to 100 to keep dashboard size manageable)
+            top_contigs = set()
+            if not bigtable.empty and "rpm" in bigtable.columns:
+                top_contigs = set(
+                    bigtable.groupby("seq_id", as_index=False)["rpm"].sum()
+                    .sort_values("rpm", ascending=False)
+                    .head(100)["seq_id"].astype(str).tolist()
+                )
+            for gz_file in sorted(depth_dir.glob("*_depth.tsv.gz")):
+                sample_name = gz_file.name.replace("_depth.tsv.gz", "")
+                try:
+                    with gzip.open(gz_file, "rt") as fh:
+                        for line in fh:
+                            parts = line.strip().split("\t")
+                            if len(parts) < 3:
+                                continue
+                            contig, pos, depth_val = parts[0], int(parts[1]), int(parts[2])
+                            if top_contigs and contig not in top_contigs:
+                                continue
+                            if contig not in depth_data:
+                                depth_data[contig] = {}
+                            if sample_name not in depth_data[contig]:
+                                depth_data[contig][sample_name] = []
+                            depth_data[contig][sample_name].append(depth_val)
+                except Exception as e:
+                    logger.warning("Failed to load depth file %s: %s", gz_file, e)
+
+            # Bin depth data (every 10bp average) to reduce size
+            binned_depth: dict[str, dict[str, list]] = {}
+            bin_size = 10
+            for contig, samples_depth in depth_data.items():
+                binned_depth[contig] = {}
+                for sample, depths in samples_depth.items():
+                    if len(depths) <= bin_size:
+                        binned_depth[contig][sample] = depths
+                    else:
+                        binned = []
+                        for i in range(0, len(depths), bin_size):
+                            chunk = depths[i:i+bin_size]
+                            binned.append(round(sum(chunk) / len(chunk), 1))
+                        binned_depth[contig][sample] = binned
+            data["depth_profiles"] = binned_depth
+            if binned_depth:
+                logger.info("Loaded depth profiles for %d contigs", len(binned_depth))
+        else:
+            data["depth_profiles"] = {}
 
         # Embed result figures as inline base64 images
         figures_dir = Path(args.figures_dir) if args.figures_dir else None
