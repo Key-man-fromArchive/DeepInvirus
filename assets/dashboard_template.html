@@ -1222,7 +1222,9 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         thickness: 15,
         line: { color: "white", width: 0.5 },
         label: sd.nodes,
-        color: sd.node_colors || PALETTE
+        color: sd.node_colors || PALETTE,
+        x: sd.node_x || undefined,
+        y: sd.node_y || undefined
       },
       link: {
         source: sd.sources,
@@ -1662,7 +1664,9 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
           color: sankeyData.node_colors || PALETTE,
           pad: 8,
           thickness: 15,
-          line: { color: "white", width: 0.5 }
+          line: { color: "white", width: 0.5 },
+          x: sankeyData.node_x || undefined,
+          y: sankeyData.node_y || undefined
         },
         link: {
           source: sankeyData.sources,
