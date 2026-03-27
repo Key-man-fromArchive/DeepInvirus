@@ -7,4 +7,4 @@ Provides a Textual-based terminal user interface for the DeepInvirus
 metagenomic virus detection pipeline.
 """
 
-__version__ = "0.1.0"
+__version__ = "1.1.0"

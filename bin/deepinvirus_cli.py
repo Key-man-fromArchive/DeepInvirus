@@ -43,9 +43,10 @@ if str(_BIN_DIR) not in sys.path:
 
 
 @click.group(invoke_without_command=True)
+@click.version_option(version="1.1.0", prog_name="DeepInvirus")
 @click.pass_context
 def cli(ctx):
-    """DeepInvirus - Viral Metagenomics Pipeline with TUI.
+    """DeepInvirus v1.1.0 - Viral metagenomics pipeline with TUI.
 
     Run without a subcommand to launch the interactive TUI.
     Use a subcommand for batch/scripting usage.
@@ -83,13 +84,18 @@ def cli(ctx):
 )
 @click.option(
     "--search",
-    default="sensitive",
-    type=click.Choice(["fast", "sensitive"], case_sensitive=False),
-    help="Diamond search sensitivity.",
+    default="very-sensitive",
+    type=click.Choice(["fast", "sensitive", "very-sensitive"], case_sensitive=False),
+    help="DIAMOND search sensitivity (default: very-sensitive in v1.1.0).",
 )
 @click.option("--skip-ml", is_flag=True, default=False, help="Skip geNomad ML detection.")
 @click.option("--threads", default=None, type=int, help="Number of threads (default: all available).")
-@click.option("--db-dir", default=None, type=click.Path(), help="Path to reference databases.")
+@click.option(
+    "--db-dir",
+    default=None,
+    type=click.Path(),
+    help="Path to reference databases (GenBank viral NT primary DB root).",
+)
 @click.option("--resume", is_flag=True, default=False, help="Resume a previous run with -resume.")
 @click.option(
     "--use-ramdisk",
@@ -122,7 +128,7 @@ def cli(ctx):
     help="SwissProt Diamond DB for non-viral contig exclusion (optional).",
 )
 def run(reads, host, outdir, assembler, search, skip_ml, threads, db_dir, resume, use_ramdisk, ramdisk_size, work_dir, checkv_db, exclusion_db):
-    """Run the DeepInvirus analysis pipeline.
+    """Run the DeepInvirus v1.1.0 analysis pipeline.
 
     Launches the Nextflow pipeline (main.nf) with the specified parameters.
     Use --use-ramdisk for massive I/O speedup when data is on NFS.

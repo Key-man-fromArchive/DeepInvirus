@@ -31,7 +31,7 @@ params.host       = 'none'       // Host genome(s): comma-separated nicknames or
 params.outdir     = './results'   // Output directory
 params.trimmer    = 'bbduk'      // bbduk or fastp
 params.assembler  = 'megahit'    // megahit or metaspades
-params.search     = 'sensitive'  // fast or sensitive
+params.search     = 'very-sensitive'  // fast, sensitive, or very-sensitive
 params.skip_ml    = false        // Skip ML-based virus detection
 params.db_dir     = null         // Custom DB path (null = use default DB)
 params.kraken2_db = null         // Kraken2 database directory (optional)
@@ -75,7 +75,7 @@ def helpMessage() {
                       [default: ${params.assembler}]
 
         --search      Diamond search sensitivity
-                      Options: fast, sensitive
+                      Options: fast, sensitive, very-sensitive
                       [default: ${params.search}]
 
         --skip_ml     Skip ML-based virus detection (geNomad)
@@ -138,8 +138,8 @@ if (!(params.assembler in ['megahit', 'metaspades'])) {
     exit 1
 }
 
-if (!(params.search in ['fast', 'sensitive'])) {
-    log.error "ERROR: --search must be 'fast' or 'sensitive'. Got: '${params.search}'"
+if (!(params.search in ['fast', 'sensitive', 'very-sensitive'])) {
+    log.error "ERROR: --search must be 'fast', 'sensitive', or 'very-sensitive'. Got: '${params.search}'"
     exit 1
 }
 
@@ -474,14 +474,14 @@ Quality Control and Preprocessing
 Quality control was performed using ${params.trimmer == 'bbduk' ? 'BBDuk v39.06+ (BBTools suite; Bushnell, 2014)' : 'fastp (Chen et al., 2018)'} for adapter removal, quality trimming (Q≥20), and PhiX/contaminant filtering. ${hostText} Read quality was assessed using FastQC before and after trimming.
 
 De Novo Assembly
-Cleaned reads from all samples were pooled for co-assembly using ${params.assembler == 'megahit' ? 'MEGAHIT v1.2.9 (Li et al., 2015) with --presets meta-large and --min-contig-len ' + params.min_contig_len : 'metaSPAdes (Nurk et al., 2017)'}. Co-assembly maximizes sensitivity for low-abundance viruses by leveraging reads across all samples.
+Cleaned reads from all samples were pooled for co-assembly using ${params.assembler == 'megahit' ? 'MEGAHIT v1.2.9 (Li et al., 2015) with --presets meta-large and --min-contig-len ' + params.min_contig_len : 'metaSPAdes (Nurk et al., 2017)'}. Co-assembly maximizes sensitivity for low-abundance viruses by leveraging reads across all samples. Post-assembly redundancy reduction was then performed with MMseqs2 easy-cluster at 95% sequence identity and 98% coverage to collapse near-identical contigs before downstream evidence integration.
 
 Virus Detection (Section A: Assembly-based Virome)
-${mlText} Protein homology search was performed using Diamond BLASTx v2.1+ (Buchfink et al., 2021) in ${params.search}-sensitive mode (e-value ≤ 1e-5) against a viral protein database (RefSeq viral proteins, ${params.search == 'sensitive' ? '--ultra-sensitive' : '--sensitive'} mode). Detection results from both methods were merged, with contigs identified by either method retained as viral candidates.
+${mlText} Protein homology search was performed using Diamond BLASTx v2.1+ (Buchfink et al., 2021) in ${params.search} mode (e-value ≤ 1e-5) against a viral protein database. Detection results from both methods were merged, with contigs identified by either method retained as viral candidates.
 
 Iterative Taxonomic Verification (Hecatomb-style 4-Tier)
 Following initial detection, viral candidates underwent iterative verification inspired by the Hecatomb pipeline (Roach et al., 2024):
-- Tier 1 (AA): Diamond BLASTx against viral protein database (--ultra-sensitive, e-value 1e-5) for initial viral protein homology.
+- Tier 1 (AA): Diamond BLASTx against viral protein database (--very-sensitive, e-value 1e-5) for initial viral protein homology.
 ${tier2Text}
 ${tier3Text}
 ${tier4Text}
@@ -490,10 +490,10 @@ Evidence from all tiers was integrated using a rule-based classification system 
 ${checkVText}
 
 Taxonomic Classification
-Taxonomic assignment was performed using MMseqs2 (Steinegger & Söding, 2017) easy-taxonomy with the RefSeq viral nucleotide database, followed by lineage reformatting with TaxonKit (Shen & Ren, 2021).
+Taxonomic assignment was performed using MMseqs2 (Steinegger & Söding, 2017) easy-taxonomy with the GenBank viral nucleotide database as the primary reference, followed by lineage reformatting with TaxonKit (Shen & Ren, 2021). RefSeq-derived accession patterns were retained as a secondary `refseq_verified` confidence tag.
 
 Per-sample Quantification
-Per-sample read coverage was calculated by mapping each sample's reads back to the co-assembled contigs using CoverM (https://github.com/wwood/CoverM). Mean depth, trimmed mean, and breadth of coverage were computed for each contig in each sample. Coverage-normalized relative abundance (RPM) was calculated as (contig coverage / total sample coverage) × 10^6.
+Per-sample read coverage was calculated by mapping each sample's reads back to the co-assembled contigs using CoverM (https://github.com/wwood/CoverM). Mean depth, trimmed mean, breadth of coverage, and true contig length were computed for each contig in each sample. Per-base depth profiles were generated with samtools depth for contig-level inspection. Coverage-normalized relative abundance (RPM) was calculated as (contig coverage / total sample coverage) × 10^6.
 
 ${kraken2Text}
 

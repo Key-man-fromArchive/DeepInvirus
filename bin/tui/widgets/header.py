@@ -23,7 +23,7 @@ class HeaderWidget(Widget):
     """
 
     APP_TITLE: str = "DeepInvirus"
-    VERSION: str = "v0.1.0"
+    VERSION: str = "v1.1.0"
 
     DEFAULT_CSS = """
     HeaderWidget {

@@ -67,8 +67,8 @@ KNOWN_COMPONENTS: list[str] = [
 
 # Human-readable labels for the DataTable
 COMPONENT_LABELS: dict[str, str] = {
-    "viral_protein": "Viral Protein",
-    "viral_nucleotide": "Viral Nucleotide",
+    "viral_protein": "RefSeq Viral Protein (Secondary)",
+    "viral_nucleotide": "GenBank Viral NT (Primary, 740K)",
     "genomad_db": "geNomad DB",
     "taxonomy": "NCBI Taxonomy",
     "exclusion_db": "Exclusion DB (SwissProt)",
@@ -159,6 +159,10 @@ class DbScreen(Screen):
             f"DB Directory: {self.db_dir}",
             id="db-path",
             classes="section-title",
+        )
+        yield Static(
+            "Primary viral nucleotide DB: GenBank viral NT (~740K sequences). RefSeq-derived evidence is retained as secondary verification.",
+            classes="text-muted",
         )
 
         table = DataTable(id="db-table")
@@ -388,20 +392,18 @@ class DbScreen(Screen):
                 self.notify("No component selected.", title="Warning", severity="warning")
                 return
 
-            # Get the component name from the first column of the cursor row
             row_data = table.get_row_at(row_key)
             component_name = str(row_data[0]).strip()
-
-            # Map display name back to install component key
+            comp_key = self._display_to_component_key(component_name)
             comp_map = {
-                "Viral Protein": "protein",
-                "Viral Nucleotide": "nucleotide",
-                "geNomad DB": "genomad",
-                "NCBI Taxonomy": "taxonomy",
-                "Exclusion DB (SwissProt)": "exclusion",
+                "viral_protein": "protein",
+                "viral_nucleotide": "nucleotide",
+                "genomad_db": "genomad",
+                "taxonomy": "taxonomy",
+                "exclusion_db": "exclusion",
             }
 
-            install_key = comp_map.get(component_name)
+            install_key = comp_map.get(comp_key or "")
             if install_key:
                 await self.run_install(components=install_key)
             elif component_name.startswith("Host:"):

@@ -117,7 +117,7 @@ class TestRunSubcommandOptions:
         assert "metaspades" in output
 
     def test_run_search_choices(self):
-        """--search should accept fast and sensitive."""
+        """--search should accept fast, sensitive, and very-sensitive."""
         result = subprocess.run(
             [sys.executable, str(CLI_SCRIPT), "run", "--help"],
             capture_output=True,
@@ -127,6 +127,7 @@ class TestRunSubcommandOptions:
         output = result.stdout.lower()
         assert "fast" in output
         assert "sensitive" in output
+        assert "very-sensitive" in output
 
 
 class TestInstallDbOptions:

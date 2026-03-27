@@ -11,7 +11,7 @@ Provides all pipeline parameters defined in 02-trd.md S3.1:
   reads      - FASTQ file or directory path
   host       - host genome for removal (human/mouse/insect/none + custom)
   assembler  - megahit | metaspades  (RadioSet)
-  search     - fast | sensitive      (RadioSet)
+  search     - fast | sensitive | very-sensitive (RadioSet)
   skip_ml    - geNomad on/off        (Checkbox, default ON)
   outdir     - output directory      (Input, default ./results)
   threads    - parallel threads      (Input, default os.cpu_count())
@@ -127,7 +127,7 @@ class RunScreen(Screen):
     │  Reads path    : [input-reads          ]                   │
     │  Host genome   : [select-host          ▼]                  │
     │  Assembler     : (●) megahit  ( ) metaspades               │
-    │  Search mode   : (●) fast     ( ) sensitive                │
+    │  Search mode   : ( ) fast ( ) sensitive (●) very-sensitive │
     │  ML detection  : [x] Enable geNomad (default: on)          │
     │  Output dir    : [input-outdir         ]                   │
     │  Threads       : [input-threads        ]                   │
@@ -164,6 +164,10 @@ class RunScreen(Screen):
 
         with ScrollableContainer():
             yield Static(" Run Analysis", classes="section-title")
+            yield Static(
+                "Pipeline stages: QC -> Host removal -> Co-assembly -> Clustering -> Detection -> Classification -> Taxonomy -> Coverage -> Reports",
+                classes="form-hint",
+            )
 
             with Vertical(classes="form-container"):
                 # ---- Reads path ----------------------------------------
@@ -200,8 +204,9 @@ class RunScreen(Screen):
                 # ---- Search mode ---------------------------------------
                 yield Label("Search mode", classes="form-label")
                 with RadioSet(id="radioset-search", classes="form-field"):
-                    yield RadioButton("fast", value=True)
+                    yield RadioButton("fast")
                     yield RadioButton("sensitive")
+                    yield RadioButton("very-sensitive", value=True)
 
                 # ---- ML detection (geNomad) ----------------------------
                 yield Label("ML detection", classes="form-label")
@@ -310,7 +315,7 @@ class RunScreen(Screen):
                 host      = 'human'
                 outdir    = './results'
                 assembler = 'megahit'
-                search    = 'sensitive'
+                search    = 'very-sensitive'
                 skip_ml   = false
                 db_dir    = null
             }
@@ -346,7 +351,7 @@ class RunScreen(Screen):
         search_val = (
             str(search_widget.pressed_button.label)
             if search_widget.pressed_button
-            else "fast"
+            else "very-sensitive"
         )
 
         ml_val = self.query_one("#checkbox-ml", Checkbox).value

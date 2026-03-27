@@ -39,6 +39,10 @@ _RE_STEPS_DONE = re.compile(
     r"(\d+)\s+of\s+(\d+)\s+steps?\s+\(\d+%\)\s+done"
 )
 
+_STEP_LABELS = {
+    "CLUSTER_CONTIGS": "Clustering contigs (MMseqs2 95% id / 98% cov)",
+}
+
 
 class NextflowRunner:
     """Nextflow process runner and real-time progress monitor.
@@ -176,7 +180,8 @@ class NextflowRunner:
         # Try process step pattern
         m_proc = _RE_PROCESS.search(line)
         if m_proc:
-            step_name = m_proc.group(1)
+            raw_step_name = m_proc.group(1)
+            step_name = _STEP_LABELS.get(raw_step_name, raw_step_name)
             self.current_step = step_name
             return (self.steps_completed, self.steps_total, step_name)
 
