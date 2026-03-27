@@ -1701,10 +1701,11 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         insidetextorientation: "horizontal",
         textfont: { size: 12 },
         marker: {
-          colors: treeData.colors || [],
           line: { width: 1, color: "white" }
         }
       }], Object.assign(baseLayout("Taxonomy Sunburst — " + sampleLabel), {
+        colorway: ["#636EFA","#EF553B","#00CC96","#AB63FA","#FFA15A","#19D3F3","#FF6692","#B6E880","#FF97FF","#FECB52",
+                   "#2E91E5","#E15F99","#1CA71C","#FB0D0D","#DA16FF","#222A2A","#B68100","#750D86","#EB663B","#511CFB"],
         margin: { l: 0, r: 0, t: 52, b: 0 },
         height: TAXONOMY_TREE_HEIGHT
       }), PLOTLY_CONFIG);
@@ -1730,7 +1731,6 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         textinfo:     "label+percent entry",
         hovertemplate: "<b>%{label}</b><br>RPM: %{value:.1f}<br>%{percentEntry:.1%}<extra></extra>",
         marker: {
-          colors: treeData.colors || [],
           line: { width: 1.5, color: "white" }
         },
         tiling: { packing: "squarify", pad: 3 },
