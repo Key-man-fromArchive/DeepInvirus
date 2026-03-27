@@ -54,9 +54,13 @@ _TEMPLATE_NAME = "dashboard_template.html"
 PLOTLY_VERSION = "2.32.0"
 TAXONOMY_RANKS = ["domain", "phylum", "class", "order", "family", "genus", "species"]
 TOP_TAXON_PALETTE = [
+    # Tableau 20 + extended — 30 distinct colors for rich treemaps
     "#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F",
     "#EDC948", "#B07AA1", "#FF9DA7", "#9C755F", "#BAB0AC",
-    "#86BCB6", "#E17C05",
+    "#86BCB6", "#E17C05", "#8CD17D", "#B6992D", "#499894",
+    "#F1CE63", "#D37295", "#A0CBE8", "#FFBE7D", "#D4A6C8",
+    "#79706E", "#D7B5A6", "#9D7660", "#D09F9B", "#FABFD2",
+    "#B3E2CD", "#FDCDAC", "#CBD5E8", "#F4CAE4", "#E6F5C9",
 ]
 
 ICTV_FAMILY_COLORS = {
@@ -81,8 +85,46 @@ ICTV_FAMILY_COLORS = {
     "Unclassified": "#CCCCCC",
 }
 
-LIGHT_NEUTRAL_COLOR = "#D6D9DF"
-LIGHT_BRANCH_COLOR = "#E4E7EC"
+LIGHT_NEUTRAL_COLOR = "#C8D5E2"  # Soft blue-gray for ancestor ranks
+LIGHT_BRANCH_COLOR = "#DDE5ED"   # Very light blue for unranked branches
+
+
+def _is_unclassified_label(x: str) -> bool:
+    return str(x).strip().lower() in {"unclassified", "unassigned", "unknown", "other", "na", "nan", ""}
+
+
+def _stable_hue(key: str) -> float:
+    """Deterministic hue from a string (0.0-1.0)."""
+    import hashlib
+    digest = hashlib.md5(key.encode("utf-8")).hexdigest()
+    return (int(digest[:8], 16) % 360) / 360.0
+
+
+def _hierarchical_node_color(node_id: str) -> str:
+    """Compute color from taxonomy path: hue=lineage anchor, lightness=depth."""
+    import colorsys
+    parts = node_id.split("/")
+    depth = len(parts) - 1
+    label = parts[-1]
+
+    if _is_unclassified_label(label):
+        # Warm neutral ramp by depth
+        neutrals = ["#C8B8A8", "#D4C8BC", "#E0D6CE", "#ECE6E0"]
+        return neutrals[min(depth, len(neutrals) - 1)]
+
+    # Anchor hue from first informative rank below domain
+    anchor = label  # fallback
+    for p in parts[1:]:  # skip domain
+        if not _is_unclassified_label(p):
+            anchor = p
+            break
+
+    h = _stable_hue(anchor)
+    # Deeper nodes get darker (more saturated)
+    lightness = max(0.35, 0.78 - 0.06 * depth)
+    saturation = min(0.85, 0.55 + 0.05 * depth)
+    r, g, b = colorsys.hls_to_rgb(h, lightness, saturation)
+    return f"#{int(r*255):02X}{int(g*255):02X}{int(b*255):02X}"
 
 
 # ---------------------------------------------------------------------------
@@ -782,12 +824,7 @@ def _build_sunburst_tree(bt: pd.DataFrame, ranks: list[str]) -> dict[str, Any]:
     colors = []
     rank_by_id = []
     for nid in ids:
-        weights = node_color_weights.get(nid, {})
-        if weights:
-            color = max(weights.items(), key=lambda item: item[1])[0]
-        else:
-            color = LIGHT_BRANCH_COLOR
-        colors.append(color)
+        colors.append(_hierarchical_node_color(nid))
         depth = min(len(nid.split("/")) - 1, len(ranks) - 1)
         rank_by_id.append(ranks[depth])
 

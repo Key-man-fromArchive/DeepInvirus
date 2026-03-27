@@ -1701,7 +1701,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         textinfo:     "label+percent entry",
         hovertemplate: "<b>%{label}</b><br>Path: %{customdata}<br>RPM: %{value:.1f}<br>%{percentEntry:.1%}<extra></extra>",
         insidetextorientation: "radial",
-        maxdepth: -1,
+        maxdepth: 3,
         textfont: { size: 14 },
         marker: { colors: treeData.colors || [] }
       }], Object.assign(baseLayout("Taxonomy Sunburst — " + sampleLabel), {
