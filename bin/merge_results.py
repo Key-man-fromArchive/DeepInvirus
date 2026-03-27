@@ -301,17 +301,16 @@ def build_bigtable(
         bt["family"] = "Unclassified"
         bt["taxonomy"] = ""
 
-    # --- Merge MMseqs2 best-hit info (target, pident) ---
+    # --- Merge MMseqs2 best-hit info (target, pident, taxname) ---
     if not taxonomy.empty and "seq_id" in taxonomy.columns:
         hit_cols = ["seq_id"]
-        if "target" in taxonomy.columns:
-            hit_cols.append("target")
-        if "pident" in taxonomy.columns:
-            hit_cols.append("pident")
+        for c in ["target", "pident", "taxname"]:
+            if c in taxonomy.columns:
+                hit_cols.append(c)
         if len(hit_cols) > 1:
             tax_hits = taxonomy[hit_cols].drop_duplicates(subset=["seq_id"], keep="first")
             bt = bt.merge(tax_hits, on="seq_id", how="left")
-    for col in ["target", "pident"]:
+    for col in ["target", "pident", "taxname"]:
         if col not in bt.columns:
             bt[col] = pd.NA
 
@@ -444,7 +443,7 @@ def build_bigtable(
     output_cols = [
         "seq_id", "sample", "length", "detection_method", "detection_score",
         "taxonomy", "family", "coverage", "breadth", "detection_confidence", "rpm",
-        "taxid", "target", "pident", "refseq_verified",
+        "taxid", "target", "pident", "taxname", "refseq_verified",
         "domain", "phylum", "class", "order", "genus", "species",
         "ictv_classification", "baltimore_group", "group",
     ]
