@@ -16,13 +16,13 @@ process CLUSTER_CONTIGS {
     script:
     def prefix = meta.id ?: "coassembly"
     """
-    # Cluster contigs at 95% identity, 80% coverage
+    # Cluster contigs at 95% identity, 98% coverage (strict dedup only)
     mmseqs easy-cluster \\
         ${contigs} \\
         ${prefix}_clust \\
         tmp \\
         --min-seq-id 0.95 \\
-        -c 0.8 \\
+        -c 0.98 \\
         --cov-mode 1 \\
         --cluster-mode 2 \\
         --cluster-reassign \\

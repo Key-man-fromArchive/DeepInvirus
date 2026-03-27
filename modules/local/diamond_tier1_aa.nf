@@ -24,7 +24,7 @@ process DIAMOND_TIER1_AA {
         --threads ${task.cpus} \\
         --evalue 1e-5 \\
         --max-target-seqs 5 \\
-        --ultra-sensitive
+        --very-sensitive
     """
 
     stub:

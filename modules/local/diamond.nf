@@ -25,7 +25,7 @@ process DIAMOND_BLASTX {
         --threads ${task.cpus} \\
         --evalue 1e-5 \\
         --max-target-seqs 5 \\
-        --ultra-sensitive
+        --very-sensitive
     """
 
     stub:
