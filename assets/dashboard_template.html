@@ -1110,7 +1110,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   var TAXONOMY_BRANCH_FALLBACK_COLOR = "#CCCCCC";
   var ICTV_COLORS = D.ictv_family_colors || {};
   var TAXONOMY_RANKS = D.taxonomy_available_ranks || ["domain", "phylum", "class", "order", "family", "genus", "species"];
-  var TAXONOMY_TREE_HEIGHT = 450;
+  var TAXONOMY_TREE_HEIGHT = 550;
   var _currentViz = "sankey";
   var _currentSample = "all";
   var _activeTaxonomyRank = TAXONOMY_RANKS.length ? TAXONOMY_RANKS[TAXONOMY_RANKS.length - 1] : "species";
@@ -1218,13 +1218,11 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
       orientation: "h",
       arrangement: "snap",
       node: {
-        pad: 8,
-        thickness: 15,
+        pad: 15,
+        thickness: 18,
         line: { color: "white", width: 0.5 },
         label: sd.nodes,
-        color: sd.node_colors || PALETTE,
-        x: sd.node_x || undefined,
-        y: sd.node_y || undefined
+        color: sd.node_colors || PALETTE
       },
       link: {
         source: sd.sources,
@@ -1241,7 +1239,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
 
     var uniqueTargets = new Set(sd.targets || []);
     var activeNodes = new Set([...(sd.sources || []), ...uniqueTargets]);
-    var dynamicHeight = Math.max(600, Math.min(3000, activeNodes.size * 18));
+    var dynamicHeight = Math.max(500, Math.min(2000, activeNodes.size * 20));
     var layout = Object.assign(baseLayout("Taxonomic Flow: Domain → Phylum → ... → Species"), {
       margin: { t: 50, r: 250, b: 20, l: 20 },
       height: dynamicHeight,
@@ -1662,11 +1660,9 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         node: {
           label: sankeyData.nodes,
           color: sankeyData.node_colors || PALETTE,
-          pad: 8,
-          thickness: 15,
-          line: { color: "white", width: 0.5 },
-          x: sankeyData.node_x || undefined,
-          y: sankeyData.node_y || undefined
+          pad: 15,
+          thickness: 18,
+          line: { color: "white", width: 0.5 }
         },
         link: {
           source: sankeyData.sources,
@@ -1697,13 +1693,17 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         parents:      treeData.parents,
         values:       treeData.values,
         customdata:   treeData.ids,
-        branchvalues: "total",
+        branchvalues: "remainder",
+        level: (treeData.ids && treeData.ids.indexOf("Viruses") >= 0) ? "Viruses" : "",
+        maxdepth: 3,
         textinfo:     "label+percent entry",
         hovertemplate: "<b>%{label}</b><br>Path: %{customdata}<br>RPM: %{value:.1f}<br>%{percentEntry:.1%}<extra></extra>",
-        insidetextorientation: "radial",
-        maxdepth: 3,
-        textfont: { size: 14 },
-        marker: { colors: treeData.colors || [] }
+        insidetextorientation: "horizontal",
+        textfont: { size: 12 },
+        marker: {
+          colors: treeData.colors || [],
+          line: { width: 1, color: "white" }
+        }
       }], Object.assign(baseLayout("Taxonomy Sunburst — " + sampleLabel), {
         margin: { l: 0, r: 0, t: 52, b: 0 },
         height: TAXONOMY_TREE_HEIGHT
@@ -1715,16 +1715,26 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         chartDiv.innerHTML = "<p style='padding:20px;color:#7f7f7f'>No treemap data available.</p>";
         return;
       }
+      // Find "Viruses" root to set as starting level (skip empty root)
+      var treemapLevel = "";
+      if (treeData.ids && treeData.ids.indexOf("Viruses") >= 0) treemapLevel = "Viruses";
       Plotly.react(chartDiv, [{
         type: "treemap",
         ids:          treeData.ids,
         labels:       treeData.labels,
         parents:      treeData.parents,
         values:       treeData.values,
-        branchvalues: "total",
-        textinfo:     "label+value+percent entry",
+        branchvalues: "remainder",
+        level:        treemapLevel,
+        maxdepth:     3,
+        textinfo:     "label+percent entry",
         hovertemplate: "<b>%{label}</b><br>RPM: %{value:.1f}<br>%{percentEntry:.1%}<extra></extra>",
-        marker: { colors: treeData.colors || [] }
+        marker: {
+          colors: treeData.colors || [],
+          line: { width: 1.5, color: "white" }
+        },
+        tiling: { packing: "squarify", pad: 3 },
+        pathbar: { visible: true }
       }], Object.assign(baseLayout("Taxonomy Treemap — " + sampleLabel), {
         margin: { l: 4, r: 4, t: 52, b: 4 },
         height: TAXONOMY_TREE_HEIGHT

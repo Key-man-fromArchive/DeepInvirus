@@ -515,39 +515,10 @@ def build_sankey(bigtable: pd.DataFrame, max_rank: str | None = None) -> dict[st
                 targets.append(node_idx[c_key])
                 values.append(int(row["count"]))
 
-    # Auto-compute node x/y positions to prevent label overlap
-    node_ranks_list = [key.split(":", 1)[0] for key in node_keys]
-    rank_to_col = {r: i for i, r in enumerate(ranks)}
-    n_cols = len(ranks)
-
-    # Group nodes by rank (column)
-    from collections import defaultdict
-    col_nodes: dict[int, list[int]] = defaultdict(list)
-    for idx, key in enumerate(node_keys):
-        rank = key.split(":", 1)[0]
-        col = rank_to_col.get(rank, 0)
-        col_nodes[col].append(idx)
-
-    node_x: list[float] = [0.0] * len(node_keys)
-    node_y: list[float] = [0.0] * len(node_keys)
-
-    for col_idx in range(n_cols):
-        nodes_in_col = col_nodes.get(col_idx, [])
-        n = len(nodes_in_col)
-        # x: evenly spaced across columns (0.001 to 0.999)
-        x_val = 0.001 + (col_idx / max(n_cols - 1, 1)) * 0.998
-        for i, node_idx in enumerate(nodes_in_col):
-            node_x[node_idx] = round(x_val, 4)
-            # y: evenly spaced within column (0.001 to 0.999)
-            y_val = 0.001 + (i / max(n - 1, 1)) * 0.998 if n > 1 else 0.5
-            node_y[node_idx] = round(y_val, 4)
-
     return {
         "nodes": node_labels,
         "node_keys": node_keys,
-        "node_ranks": node_ranks_list,
-        "node_x": node_x,
-        "node_y": node_y,
+        "node_ranks": [key.split(":", 1)[0] for key in node_keys],
         "sources": sources,
         "targets": targets,
         "values": values,
@@ -880,12 +851,29 @@ def build_taxonomy_tree(bigtable: pd.DataFrame) -> dict[str, Any]:
         empty = {"ids": [], "labels": [], "parents": [], "values": [], "colors": [], "ranks": []}
         return {"all": empty, "per_sample": {}}
 
-    all_tree = _build_sunburst_tree(unique_bt, available_ranks)
+    # Filter out contigs where ALL rank columns below domain are Unclassified/empty
+    # This removes noise and makes treemap/sunburst colorful
+    classified_mask = pd.Series(False, index=unique_bt.index)
+    for r in available_ranks:
+        if r == "domain":
+            continue
+        col = unique_bt[r].astype(str).str.strip().str.lower()
+        classified_mask |= col.notna() & ~col.isin(["", "nan", "unclassified", "unknown"])
+    classified_bt = unique_bt[classified_mask] if classified_mask.any() else unique_bt
+
+    all_tree = _build_sunburst_tree(classified_bt, available_ranks)
 
     per_sample: dict[str, dict] = {}
     if "sample" in bigtable.columns:
         for sample in sorted(bigtable["sample"].dropna().unique()):
             sample_bt = bigtable[bigtable["sample"] == sample]
+            # Same classification filter for per-sample
+            s_mask = pd.Series(False, index=sample_bt.index)
+            for r in available_ranks:
+                if r == "domain": continue
+                col = sample_bt[r].astype(str).str.strip().str.lower()
+                s_mask |= col.notna() & ~col.isin(["", "nan", "unclassified", "unknown"])
+            sample_bt = sample_bt[s_mask] if s_mask.any() else sample_bt
             # Only include contigs with non-zero RPM in this sample
             if "rpm" in sample_bt.columns:
                 sample_bt = sample_bt[pd.to_numeric(sample_bt["rpm"], errors="coerce").fillna(0) > 0]
