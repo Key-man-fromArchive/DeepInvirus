@@ -770,12 +770,13 @@
       <div class="ctrl-group">
         <label for="taxonomy-top-n">Top N taxa</label>
         <select id="taxonomy-top-n" aria-label="Limit taxonomy to top N contigs">
-          <option value="all" selected>All</option>
+          <option value="all">All</option>
           <option value="10">10</option>
           <option value="20">20</option>
-          <option value="50">50</option>
+          <option value="50" selected>50</option>
           <option value="100">100</option>
           <option value="500">500</option>
+          <option value="1000">1000</option>
         </select>
       </div>
 
@@ -1215,9 +1216,10 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     var trace = {
       type: "sankey",
       orientation: "h",
+      arrangement: "snap",
       node: {
-        pad: 20,
-        thickness: 20,
+        pad: 8,
+        thickness: 15,
         line: { color: "white", width: 0.5 },
         label: sd.nodes,
         color: sd.node_colors || PALETTE
@@ -1237,10 +1239,11 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
 
     var uniqueTargets = new Set(sd.targets || []);
     var activeNodes = new Set([...(sd.sources || []), ...uniqueTargets]);
-    var dynamicHeight = Math.max(1200, Math.min(4000, activeNodes.size * 30));
+    var dynamicHeight = Math.max(600, Math.min(3000, activeNodes.size * 18));
     var layout = Object.assign(baseLayout("Taxonomic Flow: Domain → Phylum → ... → Species"), {
       margin: { t: 50, r: 250, b: 20, l: 20 },
-      height: dynamicHeight
+      height: dynamicHeight,
+      font: { size: 10 }
     });
 
     document.getElementById("sankey-plot").style.minHeight = dynamicHeight + "px";
@@ -1607,7 +1610,7 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
 
   function taxonomySankeyHeight(sankeyData) {
     var active = new Set([].concat(sankeyData.sources || [], sankeyData.targets || []));
-    return Math.max(1200, Math.min(4000, active.size * 30));
+    return Math.max(600, Math.min(3000, active.size * 18));
   }
 
   function applyTaxonomyControls() {
@@ -1653,11 +1656,12 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
       Plotly.react(chartDiv, [{
         type: "sankey",
         orientation: "h",
+        arrangement: "snap",
         node: {
           label: sankeyData.nodes,
           color: sankeyData.node_colors || PALETTE,
-          pad: 15,
-          thickness: 20,
+          pad: 8,
+          thickness: 15,
           line: { color: "white", width: 0.5 }
         },
         link: {
