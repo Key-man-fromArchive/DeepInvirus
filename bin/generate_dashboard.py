@@ -1305,6 +1305,21 @@ def build_dashboard_data(
             else:
                 row["gc_content"] = None
 
+    # Pre-compute total RPM per contig for client-side filtering
+    for row in data["search_rows_v2"]:
+        cps = row.get("coverage_per_sample", {})
+        row["total_rpm"] = round(sum(v.get("rpm", 0) for v in cps.values()), 2)
+
+    # RPM summary stats for filter UI defaults
+    all_rpms = [r["total_rpm"] for r in data["search_rows_v2"] if r.get("total_rpm", 0) > 0]
+    data["rpm_stats"] = {
+        "min": round(min(all_rpms), 2) if all_rpms else 0,
+        "max": round(max(all_rpms), 2) if all_rpms else 0,
+        "median": round(sorted(all_rpms)[len(all_rpms)//2], 2) if all_rpms else 0,
+        "n_above_zero": len(all_rpms),
+        "n_total": len(data["search_rows_v2"]),
+    }
+
     # Filter dropdown options
     data["filter_options"] = build_filter_options(bigtable)
     data["comparison"] = build_comparison_data(bigtable)
