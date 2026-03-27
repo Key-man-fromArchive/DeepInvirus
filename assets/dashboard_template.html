@@ -763,6 +763,28 @@
       </div>
 
       <div class="ctrl-group">
+        <label for="taxonomy-min-rpm">Min RPM</label>
+        <input type="text" id="taxonomy-min-rpm" value="0" inputmode="decimal" aria-label="Minimum RPM threshold">
+      </div>
+
+      <div class="ctrl-group">
+        <label for="taxonomy-top-n">Top N taxa</label>
+        <select id="taxonomy-top-n" aria-label="Limit taxonomy to top N contigs">
+          <option value="all" selected>All</option>
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="500">500</option>
+        </select>
+      </div>
+
+      <div class="ctrl-group">
+        <label>&nbsp;</label>
+        <button class="control-button" type="button" onclick="applyTaxonomyControls()">Apply</button>
+      </div>
+
+      <div class="ctrl-group">
         <label>Sankey Ranks</label>
         <div class="radio-group" id="taxonomy-rank-group">
           {% for rank in data.taxonomy_available_ranks %}
@@ -787,17 +809,10 @@
         <span id="taxonomy-height-val" style="font-size:12px; color:var(--color-neutral);">1500px</span>
         <button class="control-button" onclick="applyTaxonomyControls()">Apply</button>
       </div>
-      <div id="taxonomy-tree-size-controls" class="control-inline" style="display:none; margin-bottom:0;">
-        <label>Treemap / Sunburst Height:</label>
-        <input type="range" id="taxonomy-tree-height-slider" min="400" max="2200" step="50" value="900" style="width:220px;"
-               oninput="document.getElementById('taxonomy-tree-height-val').textContent=this.value+'px'">
-        <span id="taxonomy-tree-height-val" style="font-size:12px; color:var(--color-neutral);">900px</span>
-        <button class="control-button" onclick="applyTaxonomyControls()">Apply</button>
-      </div>
     </div>
     <!-- Chart area -->
     <div class="plot-card" style="padding:12px;">
-      <div id="taxonomy-chart" style="width:100%;min-height:700px;"></div>
+      <div id="taxonomy-chart" style="width:100%;min-height:450px;"></div>
     </div>
 
   </section>
@@ -1090,8 +1105,11 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728",
     "#9467BD", "#8C564B", "#7F7F7F"
   ];
+  var TAXONOMY_NEUTRAL_COLOR = "#D6D9DF";
+  var TAXONOMY_BRANCH_FALLBACK_COLOR = "#CCCCCC";
   var ICTV_COLORS = D.ictv_family_colors || {};
   var TAXONOMY_RANKS = D.taxonomy_available_ranks || ["domain", "phylum", "class", "order", "family", "genus", "species"];
+  var TAXONOMY_TREE_HEIGHT = 450;
   var _currentViz = "sankey";
   var _currentSample = "all";
   var _activeTaxonomyRank = TAXONOMY_RANKS.length ? TAXONOMY_RANKS[TAXONOMY_RANKS.length - 1] : "species";
@@ -1251,6 +1269,218 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     return selected ? selected.value : _activeTaxonomyRank;
   }
 
+  function getTaxonomyMinRpm() {
+    var input = document.getElementById("taxonomy-min-rpm");
+    var value = Number((input && input.value != null ? String(input.value).trim() : "0") || "0");
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  function getTaxonomyTopN() {
+    var select = document.getElementById("taxonomy-top-n");
+    var value = String((select && select.value) || "all").toLowerCase();
+    if (value === "all") return null;
+    var numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  }
+
+  function taxonomyContigTotalRpm(row) {
+    var samples = D.samples || [];
+    return samples.reduce(function (sum, sample) {
+      var metrics = ((row.coverage_per_sample || {})[sample]) || {};
+      return sum + Number(metrics.rpm || 0);
+    }, 0);
+  }
+
+  function taxonomySampleRpm(row, sampleName) {
+    if (sampleName === "all") return taxonomyContigTotalRpm(row);
+    var metrics = ((row.coverage_per_sample || {})[sampleName]) || {};
+    return Number(metrics.rpm || 0);
+  }
+
+  function taxonomyRanksFromRows(rows) {
+    return TAXONOMY_RANKS.filter(function (rank) {
+      if (rank === "domain") return true;
+      return (rows || []).some(function (row) {
+        var value = row[rank];
+        return value != null && String(value).trim() !== "" && String(value).trim().toLowerCase() !== "nan";
+      });
+    });
+  }
+
+  function taxonomyPathFromRow(row, ranks) {
+    var parts = [];
+    for (var i = 0; i < (ranks || []).length; i += 1) {
+      var rank = ranks[i];
+      var value = row[rank];
+      var label = value == null ? "" : String(value).trim();
+      if (!label || label.toLowerCase() === "nan") {
+        if (rank === "domain") {
+          label = "Viruses";
+        } else {
+          break;
+        }
+      }
+      parts.push({ rank: rank, label: label });
+    }
+    return parts;
+  }
+
+  function buildTaxonomyTreeFromRows(rows) {
+    if (!rows || !rows.length) {
+      return { ids: [], labels: [], parents: [], values: [], colors: [], ranks: [], available_ranks: [] };
+    }
+    var ranks = taxonomyRanksFromRows(rows);
+    var nodeValues = {};
+    var nodeParents = {};
+    var nodeColorWeights = {};
+    (rows || []).forEach(function (row) {
+      var rpm = Number(row._taxonomy_rpm != null ? row._taxonomy_rpm : taxonomyContigTotalRpm(row));
+      if (!Number.isFinite(rpm) || rpm <= 0) return;
+      var branchColor = row.family_color || getFamilyColor(row.family);
+      var pathParts = taxonomyPathFromRow(row, ranks);
+      var currentPath = [];
+      pathParts.forEach(function (part) {
+        currentPath.push(part.label);
+        var nodeId = currentPath.join("/");
+        var parentId = currentPath.slice(0, -1).join("/");
+        nodeValues[nodeId] = (nodeValues[nodeId] || 0) + rpm;
+        nodeParents[nodeId] = parentId;
+        if (!nodeColorWeights[nodeId]) nodeColorWeights[nodeId] = {};
+        nodeColorWeights[nodeId][branchColor] = (nodeColorWeights[nodeId][branchColor] || 0) + rpm;
+      });
+    });
+    var ids = Object.keys(nodeValues);
+    var labelsRaw = ids.map(function (id) { return String(id).split("/").slice(-1)[0]; });
+    var labelCounts = {};
+    labelsRaw.forEach(function (label) { labelCounts[label] = (labelCounts[label] || 0) + 1; });
+    return {
+      ids: ids,
+      labels: ids.map(function (id, idx) {
+        var label = labelsRaw[idx];
+        if ((labelCounts[label] || 0) > 1 && label !== "Unclassified") {
+          var parts = String(id).split("/");
+          if (parts.length >= 2) label = label + " (" + parts[parts.length - 2] + ")";
+        }
+        return label;
+      }),
+      parents: ids.map(function (id) { return nodeParents[id] || ""; }),
+      values: ids.map(function (id) { return Math.round((nodeValues[id] || 0) * 100) / 100; }),
+      colors: ids.map(function (id) {
+        var weights = nodeColorWeights[id] || {};
+        var bestColor = TAXONOMY_BRANCH_FALLBACK_COLOR;
+        var bestWeight = -1;
+        Object.keys(weights).forEach(function (color) {
+          if (weights[color] > bestWeight) {
+            bestWeight = weights[color];
+            bestColor = color;
+          }
+        });
+        return bestColor;
+      }),
+      ranks: ids.map(function (id) {
+        var depth = Math.min(String(id).split("/").length - 1, ranks.length - 1);
+        return ranks[depth] || TAXONOMY_RANKS[TAXONOMY_RANKS.length - 1];
+      }),
+      available_ranks: ranks
+    };
+  }
+
+  function buildTaxonomySankeyFromRows(rows) {
+    var empty = {
+      nodes: [], node_keys: [], node_ranks: [], sources: [], targets: [],
+      values: [], node_colors: [], available_ranks: []
+    };
+    if (!rows || !rows.length) return empty;
+    var ranks = taxonomyRanksFromRows(rows);
+    if (ranks.length < 2) return empty;
+    var nodeKeys = [];
+    var nodeLabels = [];
+    var nodeKeySet = {};
+    var familyOf = {};
+    var linkCounts = {};
+
+    (rows || []).forEach(function (row) {
+      var path = taxonomyPathFromRow(row, ranks);
+      if (path.length < 2) return;
+      path.forEach(function (part) {
+        var key = part.rank + ":" + part.label;
+        if (!nodeKeySet[key]) {
+          nodeKeySet[key] = true;
+          nodeKeys.push(key);
+          nodeLabels.push(part.label);
+        }
+      });
+      var familyLabel = String(row.family || "").trim() || "Unclassified";
+      path.forEach(function (part) {
+        familyOf[part.rank + ":" + part.label] = familyLabel;
+      });
+      for (var i = 0; i < path.length - 1; i += 1) {
+        var sourceKey = path[i].rank + ":" + path[i].label;
+        var targetKey = path[i + 1].rank + ":" + path[i + 1].label;
+        var linkKey = sourceKey + "->" + targetKey;
+        linkCounts[linkKey] = (linkCounts[linkKey] || 0) + 1;
+      }
+    });
+
+    var nodeIndex = {};
+    nodeKeys.forEach(function (key, idx) { nodeIndex[key] = idx; });
+    var sources = [];
+    var targets = [];
+    var values = [];
+    Object.keys(linkCounts).forEach(function (linkKey) {
+      var parts = linkKey.split("->");
+      var sourceKey = parts[0];
+      var targetKey = parts[1];
+      if (nodeIndex[sourceKey] == null || nodeIndex[targetKey] == null || sourceKey === targetKey) return;
+      sources.push(nodeIndex[sourceKey]);
+      targets.push(nodeIndex[targetKey]);
+      values.push(linkCounts[linkKey]);
+    });
+
+    return {
+      nodes: nodeLabels,
+      node_keys: nodeKeys,
+      node_ranks: nodeKeys.map(function (key) { return key.split(":")[0]; }),
+      sources: sources,
+      targets: targets,
+      values: values,
+      node_colors: nodeKeys.map(function (key) {
+        var rank = key.split(":")[0];
+        if (["domain", "phylum", "class", "order"].indexOf(rank) !== -1) return TAXONOMY_NEUTRAL_COLOR;
+        return getFamilyColor(familyOf[key] || "Unclassified");
+      }),
+      available_ranks: ranks
+    };
+  }
+
+  function getFilteredTaxonomyRows() {
+    var allRows = (D.search_rows_v2 || []).slice();
+    var minRpm = getTaxonomyMinRpm();
+    var topN = getTaxonomyTopN();
+    var annotated = allRows.map(function (row) {
+      return {
+        row: row,
+        totalRpm: taxonomyContigTotalRpm(row)
+      };
+    }).filter(function (item) {
+      return item.totalRpm >= minRpm;
+    });
+    annotated.sort(function (a, b) { return b.totalRpm - a.totalRpm; });
+    if (topN != null) annotated = annotated.slice(0, topN);
+    return annotated.map(function (item) {
+      return Object.assign({}, item.row, { _taxonomy_total_rpm: item.totalRpm });
+    });
+  }
+
+  function getTaxonomyRowsForCurrentSample() {
+    return getFilteredTaxonomyRows().map(function (row) {
+      var sampleRpm = taxonomySampleRpm(row, _currentSample);
+      return Object.assign({}, row, { _taxonomy_rpm: sampleRpm });
+    }).filter(function (row) {
+      return _currentSample === "all" ? row._taxonomy_total_rpm > 0 : row._taxonomy_rpm > 0;
+    });
+  }
+
   function filterSankeyByRank(sankeyData, maxRank, selectedFamilies) {
     if (!sankeyData || !sankeyData.nodes || !sankeyData.nodes.length) return sankeyData;
     var allowedRanks = TAXONOMY_RANKS.slice(0, Math.max(TAXONOMY_RANKS.indexOf(maxRank) + 1, 0));
@@ -1389,11 +1619,9 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
   function updateTaxonomyHeightControls() {
     var hCtrl = document.getElementById("taxonomy-height-control");
     var sankeyCtrl = document.getElementById("taxonomy-sankey-size-controls");
-    var treeCtrl = document.getElementById("taxonomy-tree-size-controls");
-    if (!hCtrl || !sankeyCtrl || !treeCtrl) return;
-    hCtrl.style.display = "flex";
+    if (!hCtrl || !sankeyCtrl) return;
+    hCtrl.style.display = _currentViz === "sankey" ? "flex" : "none";
     sankeyCtrl.style.display = _currentViz === "sankey" ? "flex" : "none";
-    treeCtrl.style.display = _currentViz === "sankey" ? "none" : "flex";
   }
 
   function renderTaxonomy() {
@@ -1406,15 +1634,9 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
     var chartDiv = document.getElementById("taxonomy-chart");
     var sankeyData, treeData;
     var selectedFamilies = getSelectedTaxonomyFamilies();
-
-    if (_currentSample === "all") {
-      sankeyData = D.sankey_all || D.sankey;
-      treeData   = (D.taxonomy_tree || {}).all || {};
-    } else {
-      sankeyData = ((D.sankey_per_sample || {})[_currentSample]) || D.sankey_all || D.sankey;
-      treeData   = (((D.taxonomy_tree || {}).per_sample || {})[_currentSample]) ||
-                   (D.taxonomy_tree || {}).all || {};
-    }
+    var taxonomyRows = getTaxonomyRowsForCurrentSample();
+    sankeyData = buildTaxonomySankeyFromRows(taxonomyRows);
+    treeData = buildTaxonomyTreeFromRows(taxonomyRows);
 
     var sampleLabel = _currentSample === "all" ? "All Samples" : _currentSample;
 
@@ -1460,7 +1682,6 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         chartDiv.innerHTML = "<p style='padding:20px;color:#7f7f7f'>No sunburst data available.</p>";
         return;
       }
-      var sunburstHeight = Number((document.getElementById("taxonomy-tree-height-slider") || {}).value || 900);
       Plotly.react(chartDiv, [{
         type: "sunburst",
         ids:          treeData.ids,
@@ -1476,16 +1697,16 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         textfont: { size: 14 },
         marker: { colors: treeData.colors || [] }
       }], Object.assign(baseLayout("Taxonomy Sunburst — " + sampleLabel), {
-        margin: { l: 0, r: 0, t: 60, b: 0 },
-        height: sunburstHeight
+        margin: { l: 0, r: 0, t: 52, b: 0 },
+        height: TAXONOMY_TREE_HEIGHT
       }), PLOTLY_CONFIG);
+      chartDiv.style.minHeight = TAXONOMY_TREE_HEIGHT + "px";
 
     } else if (_currentViz === "treemap") {
       if (!treeData || !treeData.ids || treeData.ids.length === 0) {
         chartDiv.innerHTML = "<p style='padding:20px;color:#7f7f7f'>No treemap data available.</p>";
         return;
       }
-      var treemapHeight = Number((document.getElementById("taxonomy-tree-height-slider") || {}).value || 900);
       Plotly.react(chartDiv, [{
         type: "treemap",
         ids:          treeData.ids,
@@ -1497,9 +1718,10 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
         hovertemplate: "<b>%{label}</b><br>RPM: %{value:.1f}<br>%{percentEntry:.1%}<extra></extra>",
         marker: { colors: treeData.colors || [] }
       }], Object.assign(baseLayout("Taxonomy Treemap — " + sampleLabel), {
-        margin: { l: 10, r: 10, t: 60, b: 10 },
-        height: treemapHeight
+        margin: { l: 4, r: 4, t: 52, b: 4 },
+        height: TAXONOMY_TREE_HEIGHT
       }), PLOTLY_CONFIG);
+      chartDiv.style.minHeight = TAXONOMY_TREE_HEIGHT + "px";
     }
   }
 
@@ -1539,6 +1761,13 @@ window.__DASHBOARD_DATA__ = {{ data | tojson | safe }};
       _activeTaxonomyRank = this.value;
     });
   });
+
+  var taxonomyMinRpmEl = document.getElementById("taxonomy-min-rpm");
+  if (taxonomyMinRpmEl) {
+    taxonomyMinRpmEl.addEventListener("keydown", function (event) {
+      if (event.key === "Enter") applyTaxonomyControls();
+    });
+  }
 
   var comparisonSearchEl = document.getElementById("comparison-search");
   if (comparisonSearchEl) {
