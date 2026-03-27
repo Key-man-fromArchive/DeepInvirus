@@ -36,6 +36,15 @@ _BIN_DIR = Path(__file__).resolve().parent
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
+_APP_CONFIG_FILE = Path.home() / ".deepinvirus" / "config.json"
+
+
+def _load_app_config() -> dict:
+    if not _APP_CONFIG_FILE.exists():
+        return {}
+    with open(_APP_CONFIG_FILE) as f:
+        return json.load(f)
+
 
 # ---------------------------------------------------------------------------
 # Main CLI group
@@ -146,6 +155,9 @@ def run(reads, host, outdir, assembler, search, skip_ml, threads, db_dir, resume
         outdir = f"./{timestamp}_deepinvirus_results"
         click.echo(f"Output directory (auto): {outdir}")
 
+    if db_dir is None:
+        db_dir = _load_app_config().get("db_dir")
+
     # Build Nextflow command
     cmd = ["nextflow", "run", str(_BIN_DIR.parent / "main.nf")]
     cmd += ["--reads", reads]
@@ -228,6 +240,35 @@ def install_db(db_dir, components, host, threads, dry_run):
         host=host,
         threads=threads,
         dry_run=dry_run,
+    )
+
+
+# ---------------------------------------------------------------------------
+# setup: Interactive first-time setup wizard
+# ---------------------------------------------------------------------------
+
+
+@cli.command("setup")
+@click.option(
+    "--db-dir",
+    default=str(Path.home() / "Database" / "DeepInvirus"),
+    type=click.Path(),
+    help="Database directory for the setup wizard.",
+)
+@click.option("--minimal", is_flag=True, default=False, help="Skip optional large databases.")
+@click.option("--api-key", default=None, help="NCBI API key for faster NCBI downloads.")
+@click.option("--threads", default=4, type=int, help="Threads for indexing tools.")
+def setup_cmd(db_dir, minimal, api_key, threads):
+    """Run the interactive first-time setup wizard."""
+    from setup_wizard import run_wizard
+
+    sys.exit(
+        run_wizard(
+            db_dir=Path(db_dir),
+            minimal=minimal,
+            api_key=api_key,
+            threads=threads,
+        )
     )
 
 

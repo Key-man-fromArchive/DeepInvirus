@@ -68,12 +68,12 @@ class TestCLIHelp:
         assert result.returncode == 0, f"--help failed: {result.stderr}"
         output = result.stdout.lower()
         # All subcommands should be listed
-        for cmd in ("run", "install-db", "update-db", "add-host", "list-hosts", "config", "history"):
+        for cmd in ("run", "install-db", "setup", "update-db", "add-host", "list-hosts", "config", "history"):
             assert cmd in output, f"Subcommand '{cmd}' not found in --help output"
 
     @pytest.mark.parametrize(
         "subcommand",
-        ["run", "install-db", "update-db", "add-host", "list-hosts", "config", "history"],
+        ["run", "install-db", "setup", "update-db", "add-host", "list-hosts", "config", "history"],
     )
     def test_subcommand_help(self, subcommand):
         """Each subcommand --help should exit 0."""
@@ -145,6 +145,23 @@ class TestInstallDbOptions:
         output = result.stdout.lower()
         for opt in ("--db-dir", "--components", "--host", "--dry-run"):
             assert opt in output, f"Option '{opt}' not in install-db --help"
+
+
+class TestSetupOptions:
+    """Verify 'setup' subcommand has expected options."""
+
+    def test_setup_help_options(self):
+        """setup --help should list --db-dir, --minimal, --api-key."""
+        result = subprocess.run(
+            [sys.executable, str(CLI_SCRIPT), "setup", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        output = result.stdout.lower()
+        for opt in ("--db-dir", "--minimal", "--api-key", "--threads"):
+            assert opt in output, f"Option '{opt}' not in setup --help"
 
 
 class TestUpdateDbOptions:

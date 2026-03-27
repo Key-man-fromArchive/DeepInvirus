@@ -46,7 +46,7 @@ def _run_script(script: Path, args: list[str]) -> subprocess.CompletedProcess[st
         CompletedProcess with stdout/stderr captured.
     """
     return subprocess.run(
-        [sys.executable, str(script)] + args,
+        [sys.executable, str(script), *args],
         capture_output=True,
         text=True,
         timeout=30,
@@ -200,7 +200,19 @@ class TestComponentSelection:
         try:
             from install_databases import _resolve_components
             result = _resolve_components("all")
-            expected = ["protein", "nucleotide", "genomad", "taxonomy", "host", "exclusion"]
+            expected = [
+                "protein",
+                "nucleotide",
+                "genomad",
+                "taxonomy",
+                "host",
+                "exclusion",
+                "accession2taxid",
+                "uniref90_viral",
+                "uniref50",
+                "checkv",
+                "polymicrobial",
+            ]
             assert result == expected, f"Expected {expected}, got {result}"
         finally:
             sys.path.pop(0)
