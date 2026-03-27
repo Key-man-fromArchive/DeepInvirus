@@ -55,3 +55,4 @@ nextflow
 # Temporary
 *.tmp
 *.bak
+nextflow_*.log
