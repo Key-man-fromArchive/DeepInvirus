@@ -16,7 +16,8 @@ process MMSEQS_TAXONOMY {
 
     script:
     def prefix = meta.id
-    def db_path = "${mmseqs_db}/refseq_viral_db"
+    // Prefer GenBank viral DB (740K seqs) over RefSeq (19K) for comprehensive coverage
+    def db_path = file("${mmseqs_db}/genbank_viral_db").exists() ? "${mmseqs_db}/genbank_viral_db" : "${mmseqs_db}/refseq_viral_db"
     """
     mmseqs easy-search \\
         ${viral_contigs} \\

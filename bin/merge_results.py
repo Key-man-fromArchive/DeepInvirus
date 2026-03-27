@@ -315,6 +315,15 @@ def build_bigtable(
         if col not in bt.columns:
             bt[col] = pd.NA
 
+    # --- RefSeq verified flag ---
+    # Accessions starting with NC_, NZ_, NW_, AC_ are RefSeq curated
+    if "target" in bt.columns:
+        bt["refseq_verified"] = bt["target"].astype(str).str.match(
+            r"^(NC_|NZ_|NW_|AC_|NG_)", na=False
+        )
+    else:
+        bt["refseq_verified"] = False
+
     # --- Merge lineage (contig-level, seq_id or taxid) ---
     rank_cols = ["domain", "phylum", "class", "order", "genus", "species"]
     if not lineage.empty and "seq_id" in lineage.columns:
@@ -435,7 +444,7 @@ def build_bigtable(
     output_cols = [
         "seq_id", "sample", "length", "detection_method", "detection_score",
         "taxonomy", "family", "coverage", "breadth", "detection_confidence", "rpm",
-        "taxid", "target", "pident",
+        "taxid", "target", "pident", "refseq_verified",
         "domain", "phylum", "class", "order", "genus", "species",
         "ictv_classification", "baltimore_group", "group",
     ]
