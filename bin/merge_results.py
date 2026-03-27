@@ -150,13 +150,15 @@ def load_coverage_files(paths: list[Path]) -> pd.DataFrame:
             "seq_id": df.iloc[:, 0].astype(str),
             "coverage": pd.to_numeric(df.iloc[:, 1], errors="coerce").fillna(0.0),
         })
-        # Breadth: covered_bases / length
+        # Breadth: covered_bases / length; also extract true contig length
         if len(df.columns) >= 5:
             covered = pd.to_numeric(df.iloc[:, 3], errors="coerce").fillna(0.0)
             length = pd.to_numeric(df.iloc[:, 4], errors="coerce").fillna(0.0)
             cov["breadth"] = (covered / length.replace(0, float("nan"))).fillna(0.0)
+            cov["contig_length"] = length.astype(int)
         else:
             cov["breadth"] = 0.0
+            cov["contig_length"] = 0
         cov["sample"] = sample
         frames.append(cov)
     if not frames:
@@ -404,7 +406,12 @@ def build_bigtable(
         cov["sample"] = cov["sample"].astype(str)
         cov["coverage"] = pd.to_numeric(cov.get("coverage", 0.0), errors="coerce").fillna(0.0)
         cov["breadth"] = pd.to_numeric(cov.get("breadth", 0.0), errors="coerce").fillna(0.0)
-        bt = bt.merge(cov[["seq_id", "sample", "coverage", "breadth"]], on="seq_id", how="inner")
+        bt = bt.merge(cov[["seq_id", "sample", "coverage", "breadth", "contig_length"]], on="seq_id", how="inner")
+        # Fix length: detection's "length" is alignment length, CoverM's contig_length is true
+        if "contig_length" in bt.columns:
+            valid = bt["contig_length"] > 0
+            bt.loc[valid, "length"] = bt.loc[valid, "contig_length"]
+            bt = bt.drop(columns=["contig_length"])
     else:
         bt["sample"] = "coassembly"
         bt["coverage"] = 0.0
