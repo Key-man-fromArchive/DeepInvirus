@@ -5,6 +5,7 @@
 
 include { MEGAHIT_COASSEMBLY    } from '../modules/local/megahit'
 include { METASPADES_COASSEMBLY } from '../modules/local/metaspades'
+include { CLUSTER_CONTIGS       } from '../modules/local/cluster_contigs'
 
 workflow ASSEMBLY {
 
@@ -16,20 +17,25 @@ workflow ASSEMBLY {
     ch_r1 = ch_reads.map { meta, reads -> reads[0] }.collect()
     ch_r2 = ch_reads.map { meta, reads -> reads[1] }.collect()
 
-    ch_contigs = Channel.empty()
-    ch_stats   = Channel.empty()
+    ch_raw_contigs = Channel.empty()
+    ch_stats       = Channel.empty()
 
     if ( params.assembler == 'megahit' ) {
         MEGAHIT_COASSEMBLY( ch_r1, ch_r2 )
-        ch_contigs = MEGAHIT_COASSEMBLY.out.contigs
-        ch_stats   = MEGAHIT_COASSEMBLY.out.stats
+        ch_raw_contigs = MEGAHIT_COASSEMBLY.out.contigs
+        ch_stats       = MEGAHIT_COASSEMBLY.out.stats
     } else if ( params.assembler == 'metaspades' ) {
         METASPADES_COASSEMBLY( ch_r1, ch_r2 )
-        ch_contigs = METASPADES_COASSEMBLY.out.contigs
-        ch_stats   = METASPADES_COASSEMBLY.out.stats
+        ch_raw_contigs = METASPADES_COASSEMBLY.out.contigs
+        ch_stats       = METASPADES_COASSEMBLY.out.stats
     }
 
+    // Post-assembly clustering: remove redundant fragments (95% identity, 80% coverage)
+    ch_contigs_meta = ch_raw_contigs.map { contigs -> [ [id: 'coassembly'], contigs ] }
+    CLUSTER_CONTIGS( ch_contigs_meta )
+    ch_contigs = CLUSTER_CONTIGS.out.clustered_contigs.map { meta, contigs -> contigs }
+
     emit:
-    contigs = ch_contigs   // path(coassembly.contigs.fa) - single file, no meta
-    stats   = ch_stats     // path(coassembly.assembly_stats.tsv) - single file, no meta
+    contigs = ch_contigs   // path(coassembly_clustered.fa) - deduplicated contigs
+    stats   = ch_stats     // path(coassembly.assembly_stats.tsv)
 }
