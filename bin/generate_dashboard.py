@@ -1275,7 +1275,7 @@ def build_dashboard_data(
     data = {
         "summary": summary,
         # Existing keys (backward-compatible)
-        "sankey": build_sankey(bigtable),
+        "sankey": build_sankey(bigtable, max_rank="genus"),  # Overview: genus까지 (species 제외 — 라벨 겹침 방지)
         "heatmap": build_heatmap(matrix),
         "barplot": build_barplot(matrix),
         "pcoa": build_pcoa_data(pcoa, beta),
