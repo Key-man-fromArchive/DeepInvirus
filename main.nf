@@ -490,7 +490,7 @@ Evidence from all tiers was integrated using a rule-based classification system 
 ${checkVText}
 
 Taxonomic Classification
-Taxonomic assignment was performed using MMseqs2 (Steinegger & Söding, 2017) easy-taxonomy with the GenBank viral nucleotide database as the primary reference, followed by lineage reformatting with TaxonKit (Shen & Ren, 2021). RefSeq-derived accession patterns were retained as a secondary `refseq_verified` confidence tag.
+Taxonomic assignment was performed using MMseqs2 (Steinegger & Söding, 2017) easy-search with the GenBank viral nucleotide database as the primary reference, followed by lineage reformatting with TaxonKit (Shen & Ren, 2021). RefSeq-derived accession patterns were retained as a secondary `refseq_verified` confidence tag.
 
 Per-sample Quantification
 Per-sample read coverage was calculated by mapping each sample's reads back to the co-assembled contigs using CoverM (https://github.com/wwood/CoverM). Mean depth, trimmed mean, breadth of coverage, and true contig length were computed for each contig in each sample. Per-base depth profiles were generated with samtools depth for contig-level inspection. Coverage-normalized relative abundance (RPM) was calculated as (contig coverage / total sample coverage) × 10^6.

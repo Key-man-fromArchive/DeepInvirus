@@ -1,6 +1,12 @@
 // Protein homology search using Diamond blastx
 // @TASK T3.2 - Diamond blastx protein homology search
 // @SPEC docs/planning/02-trd.md#3.2-파이프라인-단계
+//
+// NOTE: --very-sensitive is intentionally hardcoded and not user-configurable.
+// Viral detection requires maximum sensitivity to avoid missing divergent or
+// low-abundance viral sequences. Reducing sensitivity here would compromise
+// the pipeline's ability to detect novel/distant viruses and is never appropriate
+// for a metagenomic detection step.
 
 process DIAMOND_BLASTX {
     tag "$meta.id"
@@ -25,7 +31,7 @@ process DIAMOND_BLASTX {
         --threads ${task.cpus} \\
         --evalue 1e-5 \\
         --max-target-seqs 5 \\
-        --very-sensitive
+        --very-sensitive  # hardcoded: detection always needs maximum sensitivity (see file header)
     """
 
     stub:

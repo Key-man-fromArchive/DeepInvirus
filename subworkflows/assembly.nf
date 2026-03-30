@@ -30,7 +30,7 @@ workflow ASSEMBLY {
         ch_stats       = METASPADES_COASSEMBLY.out.stats
     }
 
-    // Post-assembly clustering: remove redundant fragments (95% identity, 80% coverage)
+    // Post-assembly clustering: remove redundant fragments (95% identity, 98% coverage)
     ch_contigs_meta = ch_raw_contigs.map { contigs -> [ [id: 'coassembly'], contigs ] }
     CLUSTER_CONTIGS( ch_contigs_meta )
     ch_contigs = CLUSTER_CONTIGS.out.clustered_contigs.map { meta, contigs -> contigs }
