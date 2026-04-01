@@ -38,6 +38,7 @@ workflow CLASSIFICATION {
     COVERM_PERSAMPLE( ch_filtered_reads, ch_contigs.collect() )
 
     // Step 5: Merge all results into bigtable + sample_taxon_matrix + sample_counts
+    // ch_taxonomy_db is also passed to enable Diamond taxid -> lineage resolution (dual-taxid taxonomy)
     MERGE_RESULTS(
         MMSEQS_TAXONOMY.out.taxonomy.map{ meta, f -> f }.collect(),
         TAXONKIT_REFORMAT.out.lineage.map{ meta, f -> f }.collect(),
@@ -45,7 +46,8 @@ workflow CLASSIFICATION {
         ch_detection.map{ meta, f -> f }.collect(),
         ch_sample_map,
         ch_ictv_vmr,
-        ch_evidence_classified
+        ch_evidence_classified,
+        ch_taxonomy_db
     )
 
     // Step 6: Diversity analysis from sample_taxon_matrix

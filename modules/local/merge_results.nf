@@ -13,6 +13,7 @@ process MERGE_RESULTS {
     path(sample_map)
     path(ictv_vmr)
     path(evidence_classified)
+    path(taxonomy_db)
 
     output:
     path("bigtable.tsv"),              emit: bigtable
@@ -21,6 +22,13 @@ process MERGE_RESULTS {
 
     script:
     def ev_arg = evidence_classified.name != 'NO_FILE' ? "--evidence-classified ${evidence_classified}" : ''
+    // Resolve NCBI taxonomy files for Diamond taxid -> lineage (dual-taxid taxonomy)
+    def nodes_file = taxonomy_db.isDirectory() ? "${taxonomy_db}/nodes.dmp" : ''
+    def names_file = taxonomy_db.isDirectory() ? "${taxonomy_db}/names.dmp" : ''
+    def tax_args = ''
+    if (nodes_file && names_file) {
+        tax_args = "--taxonomy-nodes ${nodes_file} --taxonomy-names ${names_file}"
+    }
     """
     merge_results.py \\
         --taxonomy ${taxonomies} \\
@@ -30,6 +38,7 @@ process MERGE_RESULTS {
         --sample-map ${sample_map} \\
         --ictv ${ictv_vmr} \\
         ${ev_arg} \\
+        ${tax_args} \\
         --out-bigtable bigtable.tsv \\
         --out-matrix sample_taxon_matrix.tsv \\
         --out-counts sample_counts.tsv
