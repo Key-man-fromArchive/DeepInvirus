@@ -302,6 +302,12 @@ def taxid_to_lineage(
 
     Returns a dict with keys: domain, phylum, class, order, family, genus, species.
     Values are scientific names from names.dmp or empty string if rank not found.
+
+    Second pass: fills gaps in the lineage hierarchy using intermediate "no rank"
+    nodes from the NCBI taxonomy. For example, if species is set but genus is
+    empty, the function looks for a "no rank" node (e.g. "unclassified
+    Densovirinae") sitting between the species node and the next filled higher
+    rank, and uses that node's name as the genus value.
     """
     result: dict[str, str] = {
         "domain": "", "phylum": "", "class": "", "order": "",
@@ -310,6 +316,8 @@ def taxid_to_lineage(
     if taxid <= 0 or not node_map or not name_map:
         return result
 
+    # First pass: collect standard ranks and record the full path of taxids
+    path: list[tuple[int, str]] = []  # (taxid, rank) in child->root order
     visited: set[int] = set()
     current = taxid
     while current > 0 and current not in visited:
@@ -318,10 +326,65 @@ def taxid_to_lineage(
         if entry is None:
             break
         parent, rank = entry
+        path.append((current, rank))
         col = _RANK_TO_COLUMN.get(rank)
         if col and result[col] == "":
             result[col] = name_map.get(current, "")
         current = parent
+
+    # Second pass: fill gaps from intermediate "no rank" nodes.
+    #
+    # The rank hierarchy from leaf to root:
+    #   species -> genus -> family -> order -> class -> phylum -> domain
+    #
+    # For each adjacent pair (child_rank, parent_rank), if child_rank is filled
+    # but parent_rank is empty, scan the path between them for a "no rank" node
+    # and use it as a fill value.
+    _RANK_ORDER = ["species", "genus", "family", "order", "class", "phylum", "domain"]
+    # Map from NCBI rank name to our column name for quick lookup
+    _NCBI_RANK_TO_COL = {v: v for v in _RANK_ORDER}
+    _NCBI_RANK_TO_COL["superkingdom"] = "domain"
+
+    for i in range(len(_RANK_ORDER) - 1):
+        child_col = _RANK_ORDER[i]
+        parent_col = _RANK_ORDER[i + 1]
+
+        # Only try to fill if child is present and parent is missing
+        if not result[child_col] or result[parent_col]:
+            continue
+
+        # Find the position of child_col's taxid in path
+        child_idx = None
+        for pi, (tid, rk) in enumerate(path):
+            mapped = _NCBI_RANK_TO_COL.get(rk)
+            if mapped == child_col:
+                child_idx = pi
+                break
+
+        if child_idx is None:
+            continue
+
+        # Find the position of the next filled standard rank above parent_col
+        # (or end of path). We scan from child_idx+1 upward.
+        # Any "no rank" node found before hitting a standard rank is a candidate.
+        best_norank_tid = None
+        for pi in range(child_idx + 1, len(path)):
+            tid, rk = path[pi]
+            mapped = _NCBI_RANK_TO_COL.get(rk)
+
+            if rk == "no rank":
+                # First "no rank" node above the child rank is our best candidate
+                if best_norank_tid is None:
+                    best_norank_tid = tid
+            elif mapped is not None:
+                # Hit a standard rank — stop scanning
+                break
+
+        if best_norank_tid is not None:
+            norank_name = name_map.get(best_norank_tid, "")
+            if norank_name:
+                result[parent_col] = norank_name
+
     return result
 
 
